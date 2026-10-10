@@ -59,12 +59,12 @@ A person must act. Show the owner each `needs_human` entry's `url` and `why`, an
 
 - Send events from server code after the database commit, from a job queue or the platform's `waitUntil`, else `await` the send before responding. A `consent_updated` that turns marketing off goes only through a job queue or an outbox, because a lost one leaves Barua treating someone who said no as opted in. `references/reading-repos.md` has the order, and how to fit `attempts` to the time the send gets.
 - Check `ok` on every emit result, and log a failure with the event's name and `event_id`, never the key. `emit` never throws, so a failure nobody logs is an event lost without a trace.
-- Build `event_id` as `<name>:<source row id>`, one per occurrence for repeatable events. When `GET /plan` gives an event an `id_from`, the id is the value it names (`purchased` uses `properties.order_id`).
+- Build `event_id` as `<name>:<source row id>`, one per occurrence for repeatable events. When `GET /plan` gives an event an `id_from`, the id is the value it names (`purchased` uses `properties.order_id`). For `checkout_started` it names two values, so the id is `checkout_started:<checkout_id>:<start_id>`, and `start_id` can't contain a colon.
 - Take `occurred_at` from the source row.
 - Send `purchased` only once the payment provider confirms the money arrived. A processing payment or a refund never sends it. `references/reading-repos.md` has the rule for Stripe and other providers.
 - Use the test key everywhere except production.
 - Trust verify's exit code over your own reading.
-- Declare each declarable core event the product has no source for as `not_emitted` in the plan, with a reason. `signed_up` can't be declared, and neither can the optional `consent_updated`, which goes in the report instead. Never fake an event to fill the gap.
+- Declare each declarable core event the product has no source for as `not_emitted` in the plan, with a reason. `signed_up` can't be declared, and neither can the optional `consent_updated` or `checkout_started`, which go in the report instead. Never fake an event to fill the gap.
 - Send history with `"mode": "backfill"` (`emit(events, { mode: 'backfill' })`). Only events the product sends as they happen prove the live deploy.
 - Report every emit site as `file:function`, every `needs_server_call`, every core event the product has no source for and the moment you chose for `activated`.
 
@@ -116,6 +116,7 @@ needs_human: confirm_brand https://barua.ai/app/#/w/<workspace id>/settings/setu
 - `name → file:function` for each emit site. For `activated`, add the moment you chose in parentheses, so the owner can change it.
 - `name → not_emitted: <reason>` for each declarable core event the plan declares.
 - `consent_updated → no source: <where you looked>` when the product has no way to change marketing consent later. `consent_updated` is optional, so the plan can't declare it.
+- `checkout_started → no source: <where you looked>` when the server never creates a checkout, such as a product with no checkout or one whose checkout lives entirely in a hosted store. `checkout_started` is optional too.
 - `erase → file:function queues file:function (external_id and email)` when the product deletes accounts: first the account deletion that writes the erase job, then the job that calls `POST /people/erase` with `external_id` and then `email` until each answers 200 with `"erased": true`.
 - `plan: <status> version <version>` from the `POST /plan` answer. `approved` means the plan matched the approved one and nothing changed. `proposed` means the owner has that version to approve. `plan: none` when step 4 sent nothing.
 - `brand: no tokens found in <the repos you read>` when step 7 sent nothing, so the owner knows the brand is theirs to set under `confirm_brand`.

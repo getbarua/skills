@@ -37,14 +37,14 @@ The skill's `references/emit.ts` sends and retries this way for Node, Deno, Bun 
 <!-- docs-check:envelope -->
 | Field | Rule |
 | --- | --- |
-| `event_id` | Required. `name:id`, for example `created:4812`, where the id is the source row's id. 1 to 512 characters after the colon, with no control characters, so any id up to 256 characters fits with room for an occurrence counter. When `GET /plan` gives the event an `id_from`, the id is the value it names (`purchased` uses `properties.order_id`), so two rows never share an `event_id`. A repeatable event gets one id per occurrence. |
+| `event_id` | Required. `name:id`, for example `created:4812`, where the id is the source row's id. 1 to 512 characters after the colon, with no control characters, so any id up to 256 characters fits with room for an occurrence counter. When `GET /plan` gives the event an `id_from`, the id is the value it names (`purchased` uses `properties.order_id`). An `id_from` that names two values joins them with a colon: `checkout_started:<checkout_id>:<start_id>`. Only the first value may contain a colon, so each pair makes its own id. Either way, two rows never share an `event_id`. A repeatable event gets one id per occurrence. |
 | `name` | Required. One of the core events below, or a custom event in your approved tracking plan. |
 | `external_id` | Required. Your user id for this person, 1 to 256 characters, counted the way the identities feed counts them: an emoji counts as 2. |
 | `occurred_at` | Required. The source row's timestamp, in ISO 8601 with a timezone. It must be after 2000 and at most 5 minutes after Barua receives the event, so send the time the row records. |
 | `properties` | Optional. An object with the event's properties below, at most 8 KiB as JSON. A `null` optional property counts as absent. |
 <!-- /docs-check:envelope -->
 
-Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `churned` are declarable: when your product has no such moment, your tracking plan marks the event `not_emitted` with a reason. `consent_updated` is optional, so the plan can't declare it.
+Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `churned` are declarable: when your product has no such moment, your tracking plan marks the event `not_emitted` with a reason. `consent_updated` and `checkout_started` are optional, so the plan can't declare them. Your plan can't list an optional event either, so Barua suggests plays that start from one only after it has accepted one sent with your live key. Events sent with a test key don't count.
 
 <!-- docs-check:core-events -->
 | Event | Send it | What it means |
@@ -52,31 +52,88 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `signed_up` | required | Someone created an account. Send it once, after the user row commits. `event_id` is `signed_up:<user id>`. |
 | `activated` | declarable | Someone reached the first real result in your product. You choose the moment. `event_id` is `activated:<row id>`, one per occurrence. |
 | `created` | declarable | Someone made the main thing your product exists for, such as a project. One event per created row. `event_id` is `created:<row id>`. |
-| `purchased` | declarable | A payment succeeded. `event_id` is `purchased:<order id>`. |
+| `purchased` | declarable | A payment succeeded. `amount` is the total charged, after discounts, including shipping and tax. `event_id` is `purchased:<order id>`. |
 | `churned` | declarable | Someone's subscription or account ended. `event_id` is `churned:<row id>`, one per occurrence. |
 | `consent_updated` | optional | Someone changed their marketing consent. `event_id` is `consent_updated:<row id>`, one per change. |
+| `checkout_started` | optional | Someone started a checkout your server created, such as a Stripe Checkout Session. `event_id` is `checkout_started:<checkout id>:<start id>`, one per start. |
 <!-- /docs-check:core-events -->
 
 `use` says where a value may go. A `copy` value may appear in an email Barua writes, such as a project title. A `targeting` value only decides who gets an email and when.
 
 <!-- docs-check:core-properties -->
-| Property | Type | Required | Use | Max length |
-| --- | --- | --- | --- | --- |
-| `signed_up.email` | email | yes | targeting | 320 |
-| `signed_up.first_name` | string | no | copy | 100 |
-| `signed_up.marketing_opt_in` | boolean | no | targeting | |
-| `created.id` | string | yes | targeting | 256 |
-| `created.title` | string | yes | copy | 500 |
-| `created.kind` | string | no | copy | 64 |
-| `created.url` | url | no | copy | 2048 |
-| `purchased.order_id` | string | yes | targeting | 256 |
-| `purchased.amount` | number | yes | targeting | |
-| `purchased.currency` | currency | yes | targeting | |
-| `churned.reason` | string | no | targeting | 200 |
-| `consent_updated.marketing_opt_in` | boolean | yes | targeting | |
+| Property | Type | Required | Use | Min | Max |
+| --- | --- | --- | --- | --- | --- |
+| `signed_up.email` | email | yes | targeting | | 320 |
+| `signed_up.first_name` | string | no | copy | | 100 |
+| `signed_up.marketing_opt_in` | boolean | no | targeting | | |
+| `created.id` | string | yes | targeting | | 256 |
+| `created.title` | string | yes | copy | | 500 |
+| `created.kind` | string | no | copy | | 64 |
+| `created.url` | url | no | copy | | 2048 |
+| `purchased.order_id` | string | yes | targeting | | 256 |
+| `purchased.amount` | number | yes | targeting | 0 | |
+| `purchased.currency` | currency | yes | targeting | | |
+| `purchased.line_items` | array | no | targeting | | 15 |
+| `purchased.line_items[].product_id` | string | no | targeting | | 256 |
+| `purchased.line_items[].name` | string | yes | copy | | 200 |
+| `purchased.line_items[].quantity` | integer | yes | targeting | 1 | |
+| `purchased.line_items[].price` | number | yes | targeting | 0 | |
+| `purchased.line_items[].url` | url | no | copy | | 2048 |
+| `purchased.line_items[].image_url` | url | no | copy | | 2048 |
+| `purchased.subtotal` | number | no | targeting | 0 | |
+| `purchased.discount` | number | no | targeting | 0 | |
+| `purchased.shipping` | number | no | targeting | 0 | |
+| `purchased.tax` | number | no | targeting | 0 | |
+| `purchased.coupon` | string | no | targeting | | 64 |
+| `purchased.checkout_id` | string | no | targeting | | 256 |
+| `purchased.receipt_url` | url | no | copy | | 2048 |
+| `purchased.order_name` | string | no | copy | | 100 |
+| `churned.reason` | string | no | targeting | | 200 |
+| `consent_updated.marketing_opt_in` | boolean | yes | targeting | | |
+| `checkout_started.checkout_id` | string | yes | targeting | | 256 |
+| `checkout_started.start_id` | string | yes | targeting | | 255 |
+| `checkout_started.amount` | number | yes | targeting | 0 | |
+| `checkout_started.currency` | currency | yes | targeting | | |
+| `checkout_started.checkout_url` | url | no | copy | | 2048 |
+| `checkout_started.line_items` | array | no | targeting | | 15 |
+| `checkout_started.line_items[].product_id` | string | no | targeting | | 256 |
+| `checkout_started.line_items[].name` | string | yes | copy | | 200 |
+| `checkout_started.line_items[].quantity` | integer | yes | targeting | 1 | |
+| `checkout_started.line_items[].price` | number | yes | targeting | 0 | |
+| `checkout_started.line_items[].url` | url | no | copy | | 2048 |
+| `checkout_started.line_items[].image_url` | url | no | copy | | 2048 |
 <!-- /docs-check:core-properties -->
 
-Strings are trimmed and can't be empty or hold control characters. Emails are lowercased. `purchased.amount` is in major units (19.99) and can't be negative (a negative amount is quarantined as `invalid_property`; a refund is not a purchase), and `currency` is an ISO 4217 code in capitals, such as `USD`.
+Min is the smallest value a number or integer may take. A line's `quantity` is a whole number of at least 1, and no amount is below 0. Max is a length in characters, or for an array the most entries it holds. An array is a list of objects, one per line of the order or checkout. Its own `use` is `targeting`, because Barua never puts a whole list in an email; each entry field has its own `use`. Required on an entry field means every entry has it.
+
+`checkout_started.start_id` can't contain a colon. It is the second part of the `event_id`, after `checkout_id`, which may contain colons, so each pair makes its own id. When `start_id` is the start's time, send it in Unix milliseconds, because an ISO time has colons.
+
+Strings are trimmed and can't be empty or hold control characters. Emails are lowercased. A negative amount is quarantined as `invalid_property`, and a refund is not a purchase.
+
+`purchased.amount` is the total charged. Discounts are already taken off it, and shipping and tax are in it. `subtotal`, `discount`, `shipping` and `tax` are optional parts of it. Every amount, a line's `price` included, is in major units (19.99 for $19.99) and can't be negative, and `currency` is an ISO 4217 code in capitals, such as `USD`. A line's `price` is the unit price. Stripe's `unit_amount` counts in Stripe's charge unit (1099 for $10.99), so convert it first. Never send it as it comes. `checkout_started.amount` is the checkout's total, counted the same way. It always comes with its `currency`.
+
+`line_items` holds at most 15 lines. An order with more lines sends the first ones up to that cap, and `amount` still covers the whole order. A full list, each line with a product link and an image link, plus every other `purchased` property, comes to about 6 KiB of the 8 KiB `properties` cap. Over the cap Barua quarantines the whole event, so send what a receipt needs and nothing more. A reason about one line names it, such as `properties.line_items[2].price`.
+
+## Events the product already sends elsewhere
+
+When the product already sends one of these to another tool, send Barua the event on the right from the same place. Every rule on this page still applies to it. `references/reading-repos.md` has the full Stripe payment rules and `stripeAmount`, which converts Stripe amounts.
+
+| Already sent | Send Barua |
+| --- | --- |
+| Segment `Order Completed` | `purchased`. Its `order_id` is the `order_id`, and its `total` and `currency` are the `amount` and `currency`. |
+| GA4 `purchase` | `purchased`. Its `transaction_id` is the `order_id`, and its `currency` is the `currency`. Take `amount` from the order's own total, because `value` leaves out shipping and tax. |
+| Klaviyo `Placed Order` | `purchased`. Its `OrderId` is the `order_id`, and its `value` and `value_currency` are the `amount` and `currency`. |
+| Stripe `invoice.paid`, when `amount_paid` is above 0 | `purchased`. The invoice's `id` is the `order_id`, and its `amount_paid` and `currency` give `amount` and `currency` through `stripeAmount`. |
+| Stripe `checkout.session.completed`, when `mode` is `payment` and `payment_status` is `paid` | `purchased`. The session's `id` is the `order_id`, and its `amount_total` and `currency` give `amount` and `currency` through `stripeAmount`. Send nothing when either is null. |
+| The server code that creates a Stripe Checkout Session, when its `amount_total` and `currency` aren't null | `checkout_started`. The paragraph below sets `checkout_id`, `start_id`, `amount` and `currency`. |
+
+An analytics call can arrive without a value Barua requires, because those specs leave most of their values optional. Take a missing value from the order the call describes. When the order has no total or no currency, send no `purchased`, since Barua quarantines one without them.
+
+Stripe sends no webhook when a Checkout Session is created, so send `checkout_started` right after `stripe.checkout.sessions.create` returns. Stripe leaves a session's `amount_total` and `currency` null when it has no total, such as a session in `setup` mode that only saves a card. Send `checkout_started` only when both have a value. A session without them isn't a checkout with a known total, so skip it and send nothing in its place. `checkout_id` is the session's `id` and `checkout_url` its `url`, left out when Stripe gives none. `amount` and `currency` come from the session's `amount_total` and `currency` through `stripeAmount`. When the product makes a new session for every attempt to pay, `start_id` is the session's `id` as well. When it keeps one session while the cart changes, `start_id` is the start's `occurred_at` in Unix milliseconds, recorded once when the start happens: each start then gets its own `event_id`, and a resend of one start repeats it. Send the same `checkout_id` on the `purchased` that completes the session.
+
+Lines come from `stripe.checkout.sessions.listLineItems(session.id, { limit: 15 })`. For each line, `name` is its `description` and `quantity` its `quantity`. `product_id` is its `price.product`, left out when the line's `price` is null. `price` is its `amount_subtotal` divided by its `quantity`, converted with `stripeAmount`. Never send `price.unit_amount` as it comes. Stripe can leave a line's `description` or `quantity` null, and every line needs both, so leave that line out. `amount` still covers the whole order. On the `purchased` from a completed session, `subtotal` is the session's `amount_subtotal`, and `discount`, `shipping` and `tax` come from `total_details.amount_discount`, `amount_shipping` and `amount_tax`, each converted the same way. Leave `subtotal` out when `amount_subtotal` is null, and the other parts out when `total_details` is null, because `stripeAmount` turns a null into 0.
+
+Consent: send `marketing_opt_in: false` only for an explicit opt-out, such as someone turning marketing email off. Leave it out when the person made no choice. Under double opt-in, send `true` when they confirm their address, never when they submit the form.
 
 ## Send events
 
@@ -129,7 +186,7 @@ A quarantined event lists up to 10 reasons, each with a `field` path such as `pr
 | `missing_field` | A required envelope field is missing. | Add `event_id`, `name`, `external_id` and `occurred_at` to every event. |
 | `unknown_field` | The envelope has a field Barua doesn't accept. | Move event data into `properties`. |
 | `unknown_event` | Barua doesn't know this event name. | Use a core@1 event. To add a new one, propose it with `POST /api/integrations/v1/plan`. It works once the owner approves it. |
-| `invalid_event_id` | event_id must look like name:id, for example created:4812. When the event's plan entry has id_from, the id is the value id_from names. | Build it from the event name and the source row id, joined by a colon. An event without id_from gets one id per occurrence. |
+| `invalid_event_id` | event_id must look like name:id, for example created:4812. When the event's plan entry has id_from, the id is the value id_from names. When id_from names several, the id is their values joined by colons. | Build it from the event name and the source row id, joined by a colon. An event without id_from gets one id per occurrence. |
 | `invalid_external_id` | `external_id` must be your user id, 1 to 256 characters. | Send the id your backend uses for this user, as a string. |
 | `invalid_occurred_at` | `occurred_at` must be an ISO 8601 timestamp with a timezone, after 2000. | Send the source row's timestamp, for example `2026-09-23T10:15:00Z`. |
 | `occurred_in_future` | `occurred_at` is more than 5 minutes after Barua received the event. | Send the time the fact became true, taken from the source row. If this repeats, check the server clock. |

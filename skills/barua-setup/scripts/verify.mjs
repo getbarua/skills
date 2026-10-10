@@ -7,6 +7,10 @@
 //
 // The exit codes, and the verdict behind them, come from Barua's
 // GET /api/integrations/v1/events/status. This script never recomputes them.
+// It names no event, property or reason code, and hands each verdict list on
+// as Barua sent it, so a change to the event contract, such as a new core
+// event (checkout_started) or a list property (line_items), needs no change
+// here, and a copy installed before the change still reports it in full.
 import { parseArgs } from 'node:util';
 import { readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
