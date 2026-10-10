@@ -1,0 +1,75 @@
+# Reading the product's repos
+
+Read every repo the owner names. A monorepo counts once, with several roles. The goal is one server line per fact: the place where it becomes true in the database. Everything you send comes from there.
+
+Nothing you read leaves the machine. Barua gets events, the tracking plan, brand tokens and the `file:line` each token came from.
+
+## Frontend
+
+- Find the journeys: routes, forms and buttons that change server state.
+- Trace each action to the request it makes, and that request to the backend handler that answers it. The handler is where you emit.
+- In Next.js, files marked `"use server"` and `app/**/route.ts` are server code. Files marked `"use client"` are browser code.
+- Client analytics calls (PostHog, Segment, Mixpanel, gtag) hint at which facts matter. They are never emit sites.
+- An action that makes no request becomes a `needs_server_call` line in the report, with a suggested endpoint. Never emit from the browser to cover it.
+
+## Backend
+
+- Find the commit point: the line after the transaction or ORM write resolves. Look for Prisma `$transaction`, Drizzle or Knex transactions, Django `transaction.on_commit` and Rails `after_commit`.
+- Send from code that is still running when the send finishes. A serverless or edge platform can freeze or end the invocation once the response goes out. A send still in flight then dies with its retries and its failure log, so Barua never gets the event and nothing records the loss. Use the first of these the product has:
+  1. A durable job queue or an outbox table. Write the event in the same transaction as the fact, and let the worker call `emit`. When the result isn't `ok` and its `status` is 429 or 5xx, or its `body.code` is `network_error` (a timeout or a network failure, so no status came back), fail the job so the queue retries it. Barua drops a resend with the same `event_id`.
+  2. The platform's `waitUntil`, which keeps the invocation running after the response: `waitUntil` from `@vercel/functions` on Vercel (`after` from `next/server` in Next.js 15.1 and later), `context.waitUntil` in Netlify Functions and Edge Functions, and `ctx.waitUntil` in Cloudflare Workers. Cloudflare stops that work 30 seconds after the response. Vercel and Netlify stop it at the function's own time limit.
+  3. Otherwise, `await` the send before you respond. The response waits for Barua.
+- Never start a send that nothing waits for, such as `void emit(...)`, or an `emit` call nobody awaits and no `waitUntil` holds.
+- Fit `attempts` to the time the send gets. It takes a whole number from 1 to 5, and `createBaruaEmitter` throws on any other value, so a bad setting fails at startup. Each attempt waits at most 10 seconds for Barua, and each pause before a retry lasts at most 30 seconds, so the default 5 attempts can take up to 170 seconds. `createBaruaEmitter({ ..., attempts: 1 })` takes at most 10 seconds and never retries. Use it under Cloudflare's `waitUntil` and when the response waits for the send. A send that fails then is lost unless something sends it again, which is why a queue comes first.
+- `emit` never throws, so read its result wherever it runs and log a failure with the event's name and `event_id`:
+
+  ```ts
+  const result = await emit(event);
+  if (!result.ok) console.error('Barua event not sent', event.name, event.event_id, result.status, result.body);
+  ```
+
+  Under `waitUntil`, hand it the send with the same check:
+
+  ```ts
+  waitUntil(emit(event).then((result) => {
+    if (!result.ok) console.error('Barua event not sent', event.name, event.event_id, result.status, result.body);
+  }));
+  ```
+- `signed_up` comes from the line that commits the user row. Its `event_id` is `signed_up:<user id>`, and its `external_id` is that same id. Send the user's email as `properties.email`.
+- `marketing_opt_in` on `signed_up` comes from the signup form's consent checkbox. A later preference change is a `consent_updated` event. Send one that turns marketing off only from a job queue or an outbox, the first way in the list above, because a lost opt-out leaves Barua treating someone who said no as opted in.
+- `activated` is the first moment the user gets the product's core value, such as a first published project. It's your choice: name it in the report so the owner can change it.
+- `created` is one event per row of the main thing the product exists for. The `Use` column of the property table in `references/events.md` says which of its properties may appear in an email.
+- Payments: `purchased` and `churned` usually come from the payment provider's webhooks. See [Payments](#payments).
+- Account deletion: read the user's email before the delete, and in the same transaction write an erase job that keeps the user's id and that email, as a row in an outbox table or in a job queue that commits with that transaction. That's the first way in the list above, and the only one an erase may use. The job calls `POST /api/integrations/v1/people/erase` twice, with the user's id as `external_id` and then with that `email`, because the address Barua holds for the id can be an old one when the email changed, and it retries each call until it answers 200 with `"erased": true`. It needs the live key, so it runs only in production. `references/events.md` has the bodies and what the job does with each answer. It also covers a delete your database doesn't run, and a product with no job queue.
+- A product fact the core events don't cover (a trial starting, a team invite) becomes a custom event in the plan, with each property marked `copy` or `targeting`.
+
+## Payments
+
+`purchased` means the money arrived. Send it when the payment provider confirms the payment, and never while a payment is still processing. Each payment sends one `purchased`, from one handler.
+
+- Stripe Checkout, one-time payments (`mode` is `payment`): on `checkout.session.completed`, send `purchased` only when the session's `payment_status` is `paid`. A delayed method, such as a bank debit, completes the session with `payment_status` `unpaid` and settles later. Its `purchased` waits for `checkout.session.async_payment_succeeded`, and `checkout.session.async_payment_failed` sends nothing. Use the session id as `order_id` in both handlers.
+- Stripe invoices: `invoice.paid` sends `purchased` for each paid invoice, with the invoice id as `order_id`. It fires for every subscription payment, the first one included, and for one-off invoices. Skip an invoice whose `amount_paid` is 0, such as the one a trial starts with. In `subscription` mode, leave the Checkout session out, because its payment is that first invoice. In `payment` mode with post-purchase invoices on, the session also makes an invoice for the same payment (the session's `invoice`). Skip that invoice here, because the session already sent the purchase.
+- Use `payment_intent.succeeded` only when the product charges through PaymentIntents directly. Checkout sessions and invoices create their own PaymentIntents, so a product that uses either would count each of those payments twice.
+- Stripe amounts (`amount_total` on a session, `amount_paid` on an invoice) are integers in Stripe's charge unit, which isn't always the currency's ISO 4217 minor unit. Stripe still writes ISK and UGX with two trailing zeros, so 500 means 5 ISK. Barua's `amount` is in major units and its `currency` is the ISO 4217 code in capitals. Read the amount together with the object's `currency` and convert with this table. It holds Stripe's lists as of 2026-10-09 (https://docs.stripe.com/currencies):
+
+  ```ts
+  const STRIPE_ZERO_DECIMAL = new Set(['bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf']);
+  const STRIPE_THREE_DECIMAL = new Set(['bhd', 'jod', 'kwd', 'omr', 'tnd']);
+  // Every other code, ISK, UGX, HUF and TWD included, has two decimals in Stripe's amounts.
+  function stripeAmount(amount: number, currency: string): { amount: number; currency: string } {
+    const code = currency.toLowerCase();
+    const divisor = STRIPE_ZERO_DECIMAL.has(code) ? 1 : STRIPE_THREE_DECIMAL.has(code) ? 1000 : 100;
+    return { amount: amount / divisor, currency: code.toUpperCase() };
+  }
+  ```
+
+  A webhook Stripe delivers twice builds the same `event_id`, so Barua keeps one.
+- `customer.subscription.deleted` gives `churned`.
+- A refund never sends `purchased`, and neither does a failed or disputed payment.
+- Every other provider, PayPal and Shopify included, follows the same rule. Send `purchased` on the signal that says the money arrived, such as a captured or paid payment, and never for an order that is only authorized or still pending. An app store purchase counts once the store confirms it. An invoice your product marks paid by hand counts once it's marked.
+- For any other provider, read its docs for the unit of the amount it sends before you convert. Barua wants major units, such as 19.99.
+
+## Database and migrations
+
+- Read the DDL for each property's type and length, and for the row timestamp that becomes `occurred_at`.
+- For history, write read-only `SELECT`s to `barua/backfill/<event>.sql` that return rows in the event's shape. Never run them against production. Whoever sends their rows sends them with `"mode": "backfill"`, `signed_up` first, so the live deploy check waits for the product's own live events.
