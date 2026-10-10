@@ -39,9 +39,9 @@ Nothing you read leaves the machine. Barua gets events, the tracking plan, brand
 - `marketing_opt_in` on `signed_up` comes from the signup form's consent checkbox. A later preference change is a `consent_updated` event. Send one that turns marketing off only from a job queue or an outbox, the first way in the list above, because a lost opt-out leaves Barua treating someone who said no as opted in.
 - `activated` is the first moment the user gets the product's core value, such as a first published project. It's your choice: name it in the report so the owner can change it.
 - `created` is one event per row of the main thing the product exists for. The `Use` column of the property table in `references/events.md` says which of its properties may appear in an email.
-- Payments: `purchased` and `churned` usually come from the payment provider's webhooks. See [Payments](#payments).
+- Payments: `purchased` and `churned` usually come from the payment provider's webhooks. See [Payments](#payments). The trial and subscription events and `order_refunded` come from there too, and the order status events from the shipping system.
 - Account deletion: read the user's email before the delete, and in the same transaction write an erase job that keeps the user's id and that email, as a row in an outbox table or in a job queue that commits with that transaction. That's the first way in the list above, and the only one an erase may use. The job calls `POST /api/integrations/v1/people/erase` twice, with the user's id as `external_id` and then with that `email`, because the address Barua holds for the id can be an old one when the email changed, and it retries each call until it answers 200 with `"erased": true`. It needs the live key, so it runs only in production. `references/events.md` has the bodies and what the job does with each answer. It also covers a delete your database doesn't run, and a product with no job queue.
-- A product fact the core events don't cover (a trial starting, a team invite) becomes a custom event in the plan, with each property marked `copy` or `targeting`.
+- A product fact the core events don't cover (a team invite, a report export) becomes a custom event in the plan, with each property marked `copy` or `targeting`. Check the core list in `references/events.md` first: a trial, a subscription, a shipment and a sign-in are core events now.
 
 ## Payments
 
@@ -64,8 +64,8 @@ Nothing you read leaves the machine. Barua gets events, the tracking plan, brand
   ```
 
   A webhook Stripe delivers twice builds the same `event_id`, so Barua keeps one.
-- `customer.subscription.deleted` gives `churned`.
-- A refund never sends `purchased`, and neither does a failed or disputed payment.
+- `customer.subscription.deleted` gives `churned`. `references/events.md` maps Stripe's other subscription and refund webhooks.
+- A refund never sends `purchased`, and neither does a failed or disputed payment. A refund sends `order_refunded`.
 - Every other provider, PayPal and Shopify included, follows the same rule. Send `purchased` on the signal that says the money arrived, such as a captured or paid payment, and never for an order that is only authorized or still pending. An app store purchase counts once the store confirms it. An invoice your product marks paid by hand counts once it's marked.
 - For any other provider, read its docs for the unit of the amount it sends before you convert. Barua wants major units, such as 19.99.
 

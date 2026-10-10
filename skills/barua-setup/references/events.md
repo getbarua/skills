@@ -37,14 +37,14 @@ The skill's `references/emit.ts` sends and retries this way for Node, Deno, Bun 
 <!-- docs-check:envelope -->
 | Field | Rule |
 | --- | --- |
-| `event_id` | Required. `name:id`, for example `created:4812`, where the id is the source row's id. 1 to 512 characters after the colon, with no control characters, so any id up to 256 characters fits with room for an occurrence counter. When `GET /plan` gives the event an `id_from`, the id is the value it names (`purchased` uses `properties.order_id`). An `id_from` that names two values joins them with a colon: `checkout_started:<checkout_id>:<start_id>`. Only the first value may contain a colon, so each pair makes its own id. Either way, two rows never share an `event_id`. A repeatable event gets one id per occurrence. |
+| `event_id` | Required. `name:id`, for example `created:4812`, where the id is the source row's id. 1 to 512 characters after the colon, with no control characters, so any id up to 256 characters fits with room for an occurrence counter. When `GET /plan` gives the event an `id_from`, the id is the value it names (`purchased` uses `properties.order_id`). An `id_from` that names two values joins them with a colon: `checkout_started:<checkout_id>:<start_id>`. Only the first value may contain a colon, so each pair makes its own id. Three events build a part from a value. `trial_ending` ends with `trial_ends_at` in Unix milliseconds. `signed_in` ends with the UTC date of `occurred_at`, as YYYY-MM-DD. `order_delayed` ends with its `eta_date`, or the word `unknown` when it has none. Either way, two rows never share an `event_id`. A repeatable event gets one id per occurrence. |
 | `name` | Required. One of the core events below, or a custom event in your approved tracking plan. |
 | `external_id` | Required. Your user id for this person, 1 to 256 characters, counted the way the identities feed counts them: an emoji counts as 2. |
 | `occurred_at` | Required. The source row's timestamp, in ISO 8601 with a timezone. It must be after 2000 and at most 5 minutes after Barua receives the event, so send the time the row records. |
 | `properties` | Optional. An object with the event's properties below, at most 8 KiB as JSON. A `null` optional property counts as absent. |
 <!-- /docs-check:envelope -->
 
-Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `churned` are declarable: when your product has no such moment, your tracking plan marks the event `not_emitted` with a reason. `consent_updated` and `checkout_started` are optional, so the plan can't declare them. Your plan can't list an optional event either, so Barua suggests plays that start from one only after it has accepted one sent with your live key. Events sent with a test key don't count.
+Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `churned` are declarable: when your product has no such moment, your tracking plan marks the event `not_emitted` with a reason. The rest are optional, from `consent_updated` on, so the plan can't declare them. Your plan can't list an optional event either, so Barua suggests plays that start from one only after it has accepted one sent with your live key. Events sent with a test key don't count.
 
 <!-- docs-check:core-events -->
 | Event | Send it | What it means |
@@ -53,9 +53,20 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `activated` | declarable | Someone reached the first real result in your product. You choose the moment. `event_id` is `activated:<row id>`, one per occurrence. |
 | `created` | declarable | Someone made the main thing your product exists for, such as a project. One event per created row. `event_id` is `created:<row id>`. |
 | `purchased` | declarable | A payment succeeded. `amount` is the total charged, after discounts, including shipping and tax. `event_id` is `purchased:<order id>`. |
-| `churned` | declarable | Someone's subscription or account ended. `event_id` is `churned:<row id>`, one per occurrence. |
+| `churned` | declarable | Someone's subscription or relationship with your product ended. `event_id` is `churned:<row id>`, one per occurrence. |
 | `consent_updated` | optional | Someone changed their marketing consent. `event_id` is `consent_updated:<row id>`, one per change. |
 | `checkout_started` | optional | Someone started a checkout your server created, such as a Stripe Checkout Session. `event_id` is `checkout_started:<checkout id>:<start id>`, one per start. |
+| `order_shipped` | optional | A shipment of an order left for delivery. An order sent in two parcels sends two. `event_id` is `order_shipped:<shipment id>`. |
+| `order_delivered` | optional | A shipment was delivered. `occurred_at` is the delivery time. `event_id` is `order_delivered:<shipment id>`. |
+| `order_delayed` | optional | A shipment's delivery moved later. `event_id` is `order_delayed:<shipment id>:<eta_date>`, or `order_delayed:<shipment id>:unknown` when there is no new date. |
+| `order_cancelled` | optional | An order was cancelled. Money paid back is an `order_refunded`. `event_id` is `order_cancelled:<order id>`. |
+| `order_refunded` | optional | Money from an order went back to the buyer. One event per refund. `event_id` is `order_refunded:<refund id>`. |
+| `trial_started` | optional | Someone started a trial. `event_id` is `trial_started:<trial id>`. |
+| `trial_ending` | optional | Someone's trial ends soon. Send it when the reminder is due. `event_id` is `trial_ending:<trial id>:<trial_ends_at in Unix milliseconds>`. |
+| `trial_ended` | optional | Someone's trial ended, including one that turned into a paid plan. `event_id` is `trial_ended:<trial id>`. |
+| `subscription_started` | optional | Someone started a subscription. `event_id` is `subscription_started:<subscription id>`. |
+| `subscription_cancelled` | optional | Someone asked to cancel a subscription that is still running. `event_id` is `subscription_cancelled:<subscription id>`. |
+| `signed_in` | optional | Someone signed in. Send only their first sign-in of each UTC day. `event_id` is `signed_in:<user id>:<YYYY-MM-DD>`, the UTC date of `occurred_at`. |
 <!-- /docs-check:core-events -->
 
 `use` says where a value may go. A `copy` value may appear in an email Barua writes, such as a project title. A `targeting` value only decides who gets an email and when.
@@ -66,6 +77,9 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `signed_up.email` | email | yes | targeting | | 320 |
 | `signed_up.first_name` | string | no | copy | | 100 |
 | `signed_up.marketing_opt_in` | boolean | no | targeting | | |
+| `signed_up.type` | string | no | targeting | | 32 |
+| `signed_up.timezone` | timezone | no | targeting | | 64 |
+| `signed_up.locale` | locale | no | targeting | | 35 |
 | `created.id` | string | yes | targeting | | 256 |
 | `created.title` | string | yes | copy | | 500 |
 | `created.kind` | string | no | copy | | 64 |
@@ -90,6 +104,7 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `purchased.order_name` | string | no | copy | | 100 |
 | `churned.reason` | string | no | targeting | | 200 |
 | `consent_updated.marketing_opt_in` | boolean | yes | targeting | | |
+| `consent_updated.method` | string | no | targeting | | 64 |
 | `checkout_started.checkout_id` | string | yes | targeting | | 256 |
 | `checkout_started.start_id` | string | yes | targeting | | 255 |
 | `checkout_started.amount` | number | yes | targeting | 0 | |
@@ -102,9 +117,82 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `checkout_started.line_items[].price` | number | yes | targeting | 0 | |
 | `checkout_started.line_items[].url` | url | no | copy | | 2048 |
 | `checkout_started.line_items[].image_url` | url | no | copy | | 2048 |
+| `order_shipped.order_id` | string | yes | targeting | | 256 |
+| `order_shipped.shipment_id` | string | yes | targeting | | 256 |
+| `order_shipped.order_name` | string | no | copy | | 100 |
+| `order_shipped.carrier` | string | no | targeting | | 60 |
+| `order_shipped.tracking_number` | string | no | targeting | | 100 |
+| `order_shipped.tracking_url` | url | no | targeting | | 2048 |
+| `order_shipped.eta_date` | date | no | targeting | | |
+| `order_shipped.line_items` | array | no | targeting | | 15 |
+| `order_shipped.line_items[].product_id` | string | no | targeting | | 256 |
+| `order_shipped.line_items[].name` | string | yes | copy | | 200 |
+| `order_shipped.line_items[].quantity` | integer | yes | targeting | 1 | |
+| `order_shipped.line_items[].price` | number | yes | targeting | 0 | |
+| `order_shipped.line_items[].url` | url | no | copy | | 2048 |
+| `order_shipped.line_items[].image_url` | url | no | copy | | 2048 |
+| `order_delivered.order_id` | string | yes | targeting | | 256 |
+| `order_delivered.shipment_id` | string | yes | targeting | | 256 |
+| `order_delivered.order_name` | string | no | copy | | 100 |
+| `order_delivered.carrier` | string | no | targeting | | 60 |
+| `order_delivered.tracking_number` | string | no | targeting | | 100 |
+| `order_delivered.tracking_url` | url | no | targeting | | 2048 |
+| `order_delivered.line_items` | array | no | targeting | | 15 |
+| `order_delivered.line_items[].product_id` | string | no | targeting | | 256 |
+| `order_delivered.line_items[].name` | string | yes | copy | | 200 |
+| `order_delivered.line_items[].quantity` | integer | yes | targeting | 1 | |
+| `order_delivered.line_items[].price` | number | yes | targeting | 0 | |
+| `order_delivered.line_items[].url` | url | no | copy | | 2048 |
+| `order_delivered.line_items[].image_url` | url | no | copy | | 2048 |
+| `order_delayed.order_id` | string | yes | targeting | | 256 |
+| `order_delayed.shipment_id` | string | yes | targeting | | 256 |
+| `order_delayed.order_name` | string | no | copy | | 100 |
+| `order_delayed.carrier` | string | no | targeting | | 60 |
+| `order_delayed.tracking_number` | string | no | targeting | | 100 |
+| `order_delayed.tracking_url` | url | no | targeting | | 2048 |
+| `order_delayed.eta_date` | date | no | targeting | | |
+| `order_delayed.line_items` | array | no | targeting | | 15 |
+| `order_delayed.line_items[].product_id` | string | no | targeting | | 256 |
+| `order_delayed.line_items[].name` | string | yes | copy | | 200 |
+| `order_delayed.line_items[].quantity` | integer | yes | targeting | 1 | |
+| `order_delayed.line_items[].price` | number | yes | targeting | 0 | |
+| `order_delayed.line_items[].url` | url | no | copy | | 2048 |
+| `order_delayed.line_items[].image_url` | url | no | copy | | 2048 |
+| `order_cancelled.order_id` | string | yes | targeting | | 256 |
+| `order_cancelled.order_name` | string | no | copy | | 100 |
+| `order_cancelled.reason` | string | no | targeting | | 200 |
+| `order_cancelled.amount` | number | no | targeting | 0 | |
+| `order_cancelled.currency` | currency | no | targeting | | |
+| `order_refunded.order_id` | string | yes | targeting | | 256 |
+| `order_refunded.refund_id` | string | yes | targeting | | 256 |
+| `order_refunded.amount` | number | yes | targeting | > 0 | |
+| `order_refunded.currency` | currency | yes | targeting | | |
+| `order_refunded.full` | boolean | yes | targeting | | |
+| `order_refunded.reason` | string | no | targeting | | 200 |
+| `order_refunded.line_items` | array | no | targeting | | 15 |
+| `order_refunded.line_items[].product_id` | string | no | targeting | | 256 |
+| `order_refunded.line_items[].name` | string | yes | copy | | 200 |
+| `order_refunded.line_items[].quantity` | integer | yes | targeting | 1 | |
+| `order_refunded.line_items[].price` | number | yes | targeting | 0 | |
+| `order_refunded.line_items[].url` | url | no | copy | | 2048 |
+| `order_refunded.line_items[].image_url` | url | no | copy | | 2048 |
+| `trial_started.trial_id` | string | yes | targeting | | 256 |
+| `trial_started.trial_ends_at` | timestamp | yes | targeting | | |
+| `trial_started.plan` | string | no | copy | | 64 |
+| `trial_ending.trial_id` | string | yes | targeting | | 256 |
+| `trial_ending.trial_ends_at` | timestamp | yes | targeting | | |
+| `trial_ending.plan` | string | no | copy | | 64 |
+| `trial_ended.trial_id` | string | yes | targeting | | 256 |
+| `trial_ended.plan` | string | no | copy | | 64 |
+| `subscription_started.subscription_id` | string | yes | targeting | | 256 |
+| `subscription_started.plan` | string | no | copy | | 64 |
+| `subscription_cancelled.subscription_id` | string | yes | targeting | | 256 |
+| `subscription_cancelled.plan` | string | no | copy | | 64 |
+| `subscription_cancelled.reason` | string | no | targeting | | 200 |
+| `subscription_cancelled.ends_at` | timestamp | no | targeting | | |
 <!-- /docs-check:core-properties -->
 
-Min is the smallest value a number or integer may take. A line's `quantity` is a whole number of at least 1, and no amount is below 0. Max is a length in characters, or for an array the most entries it holds. An array is a list of objects, one per line of the order or checkout. Its own `use` is `targeting`, because Barua never puts a whole list in an email; each entry field has its own `use`. Required on an entry field means every entry has it.
+Min is the smallest value a number or integer may take, and `> 0` means it must be above 0. A line's `quantity` is a whole number of at least 1. No amount is below 0. An amount can be 0, such as an order a discount pays in full, except a refund's `amount`, which is above 0 because a refund of 0 moved no money. Max is a length in characters, or for an array the most entries it holds. An array is a list of objects, one per line of the order, checkout, shipment or refund. A `date` is one calendar day written `YYYY-MM-DD`, such as `2026-10-12`. It has no time, and it must be a real day. A `timezone` is a time zone name the IANA database knows, such as `Europe/Oslo` or `UTC`. Barua refuses an offset such as `+01:00`. A `locale` is a BCP 47 language tag, such as `en-US` or `zh-Hant-TW`. Its own `use` is `targeting`, because Barua never puts a whole list in an email; each entry field has its own `use`. Required on an entry field means every entry has it.
 
 `checkout_started.start_id` can't contain a colon. It is the second part of the `event_id`, after `checkout_id`, which may contain colons, so each pair makes its own id. When `start_id` is the start's time, send it in Unix milliseconds, because an ISO time has colons.
 
@@ -114,9 +202,27 @@ Strings are trimmed and can't be empty or hold control characters. Emails are lo
 
 `line_items` holds at most 15 lines. An order with more lines sends the first ones up to that cap, and `amount` still covers the whole order. A full list, each line with a product link and an image link, plus every other `purchased` property, comes to about 6 KiB of the 8 KiB `properties` cap. Over the cap Barua quarantines the whole event, so send what a receipt needs and nothing more. A reason about one line names it, such as `properties.line_items[2].price`.
 
+`amount` and `currency` come together. An event that has both takes both or neither. An `order_cancelled` sent before any money moved leaves both out. One half alone is quarantined as `missing_property` for the other.
+
+Send one order event per status, from the server code that records it. `order_id` is the `order_id` of the order's `purchased`. A shipment is one parcel, so an order sent in two parcels sends two `order_shipped`, each with its own `shipment_id`. `order_delivered` and `order_delayed` repeat the shipment's facts, so each one says which parcel it is about. Send the carrier, tracking number, tracking link and delivery date as your shipping system has them. Barua doesn't put them in an email yet. A delay with a new date gets its own `event_id`, so each new date is a new event. A shipment gets one delay without a date.
+
+`order_refunded.amount` is what this refund paid back, in major units. A refund is its own event, so its amount is above 0. Barua quarantines a refund of 0 as `invalid_property`. A refund that moved no money, such as one that only puts items back in stock, sends nothing. Send `full: true` when nothing paid is left on the order, including when this refund is the last of several. Send `false` for a partial refund. Barua stores each refund, and it doesn't yet change whether the order counts as paid.
+
+Send `trial_ending` when the reminder is due, such as three days before the trial ends. A play only acts at or after a time it reads, so it can't send that reminder from `trial_ends_at` alone. Its `event_id` holds `trial_ends_at` in Unix milliseconds, so when a trial is extended, the reminder for the new end is a new event.
+
+`subscription_cancelled` is the request to cancel, sent while the subscription still runs, so a play can try to keep the customer. `churned` is the end. A subscription gets one `subscription_cancelled`: a second request after the customer undid the first comes back `event_id_conflict`. `subscription_started` has no amount, because each paid invoice is a `purchased`.
+
+Send `signed_in` for someone's first sign-in of each UTC day only. Barua keeps each event as a row until the person is erased, and a play that asks when someone was last seen needs only the latest day. A later sign-in that day has the same `event_id`, so it comes back `event_id_conflict` and adds no row.
+
+`signed_up.type` says how someone joined, such as `organic` or `invited`. `timezone` is an IANA time zone such as `Europe/Oslo`, and `locale` is a BCP 47 language tag such as `en-US`. Barua checks both. A value it can't read, such as `Oslo` or `en_US`, quarantines the whole `signed_up` as `invalid_property`, so leave one out unless it comes from a source that writes these formats, such as the browser's `Intl.DateTimeFormat().resolvedOptions().timeZone` and `navigator.language`. Rules can read them now. Barua's send windows and the language it writes in don't read `timezone` or `locale` yet.
+
+`consent_updated.method` records how the choice was made, such as `signup_form` or `settings`. It is a record for you, and no play reads it.
+
 ## Events the product already sends elsewhere
 
 When the product already sends one of these to another tool, send Barua the event on the right from the same place. Every rule on this page still applies to it. `references/reading-repos.md` has the full Stripe payment rules and `stripeAmount`, which converts Stripe amounts.
+
+Stripe gives every time in Unix seconds, such as a subscription's `trial_end` and a refund's `created`. Barua wants ISO 8601 text with a time zone, so convert each one with `new Date(seconds * 1000).toISOString()` before it goes into a timestamp property or `occurred_at`. Barua quarantines a number sent as it comes. Check for null first, because `new Date(null * 1000)` is a time in 1970 and no error. Stripe gives every amount in its charge unit, so convert each one through `stripeAmount`.
 
 | Already sent | Send Barua |
 | --- | --- |
@@ -126,12 +232,34 @@ When the product already sends one of these to another tool, send Barua the even
 | Stripe `invoice.paid`, when `amount_paid` is above 0 | `purchased`. The invoice's `id` is the `order_id`, and its `amount_paid` and `currency` give `amount` and `currency` through `stripeAmount`. |
 | Stripe `checkout.session.completed`, when `mode` is `payment` and `payment_status` is `paid` | `purchased`. The session's `id` is the `order_id`, and its `amount_total` and `currency` give `amount` and `currency` through `stripeAmount`. Send nothing when either is null. |
 | The server code that creates a Stripe Checkout Session, when its `amount_total` and `currency` aren't null | `checkout_started`. The paragraph below sets `checkout_id`, `start_id`, `amount` and `currency`. |
+| Stripe `customer.subscription.created`, when `status` is `active` or `trialing` | `subscription_started`. The subscription's `id` is the `subscription_id`. A subscription that starts `incomplete` sends it later, from the `customer.subscription.updated` whose `previous_attributes.status` is `incomplete` and whose `status` is now `active`. |
+| Stripe `customer.subscription.created`, when `status` is `trialing` | `trial_started`, beside the `subscription_started`. The subscription's `id` is the `trial_id`, and `trial_ends_at` is `new Date(trial_end * 1000).toISOString()`. Send nothing when `trial_end` is null. |
+| Stripe `customer.subscription.trial_will_end`, when `status` is `trialing` and `trial_end` is still ahead | `trial_ending`. The subscription's `id` is the `trial_id`, `trial_ends_at` is `new Date(trial_end * 1000).toISOString()`, and the `event_id` ends with `trial_end` times 1000, its Unix milliseconds. Stripe also sends this event at once when a trial is ended early, and then it isn't a reminder, which is why the condition checks both. Send nothing when `trial_end` is null. |
+| Stripe `customer.subscription.updated`, when a cancel is now pending | `subscription_cancelled`. The subscription's `id` is the `subscription_id`. The paragraph below says when a cancel is pending. |
+| Stripe `customer.subscription.deleted` | `churned`. The subscription has ended, so it is never a `subscription_cancelled`. |
+| Stripe `customer.subscription.updated`, when `previous_attributes` names `status` as `trialing` and `status` is no longer `trialing` | `trial_ended`. The subscription's `id` is the `trial_id`, and `occurred_at` is `new Date(trial_end * 1000).toISOString()`. Send nothing when `trial_end` is null. |
+| Stripe `customer.subscription.deleted`, when `trial_end` isn't null | `trial_ended`, beside the `churned`. The subscription's `id` is the `trial_id`. `occurred_at` is `new Date(trial_end * 1000).toISOString()`, or `ended_at` when that is earlier, converted the same way, because a trial cancelled before its end ended then. |
+| Stripe `refund.created` when the refund's `status` is `succeeded`, or the `refund.updated` that moves a pending refund to `succeeded` | `order_refunded`. The refund's `id` is the `refund_id`, and its `amount` and `currency` give `amount` and `currency` through `stripeAmount`. `full` is the `refunded` of the charge it refunds. `order_id` is the id your `purchased` used for that payment. Send nothing when the refund's `charge` is null. |
+| Shopify's `fulfillments/create` webhook | `order_shipped`. The fulfillment's `id` is the `shipment_id`, and `order_id` is the id your `purchased` used for that order. `carrier` is its `tracking_company`, while `tracking_number` and `tracking_url` keep their names. Leave out each one that is null. |
+| Shopify's `fulfillment_events/create` webhook, when `status` is `delivered` | `order_delivered`. The event's `fulfillment_id` is the `shipment_id`, `order_id` is the id your `purchased` used for that order, and `occurred_at` is its `happened_at`. |
+| Shopify's `fulfillment_events/create` webhook, when `status` is `delayed` | `order_delayed`. `shipment_id` and `order_id` come as for `order_delivered`. `eta_date` is the date part of `estimated_delivery_at`, left out when it is null. |
+| Shopify's `orders/cancelled` webhook | `order_cancelled`. `order_id` is the id your `purchased` used for that order, and `order_name` is its `name`. `occurred_at` is its `cancelled_at`. `amount` is its `total_price` as a number, with its `currency`. `reason` is its `cancel_reason`, left out when it is null. |
+
+Shopify's rows follow its webhook payloads (https://shopify.dev/docs/api/webhooks/latest). Shopify gives times as ISO 8601 text already, and amounts in major units as text, such as `"404.95"`, so only turn an amount into a number.
 
 An analytics call can arrive without a value Barua requires, because those specs leave most of their values optional. Take a missing value from the order the call describes. When the order has no total or no currency, send no `purchased`, since Barua quarantines one without them.
 
 Stripe sends no webhook when a Checkout Session is created, so send `checkout_started` right after `stripe.checkout.sessions.create` returns. Stripe leaves a session's `amount_total` and `currency` null when it has no total, such as a session in `setup` mode that only saves a card. Send `checkout_started` only when both have a value. A session without them isn't a checkout with a known total, so skip it and send nothing in its place. `checkout_id` is the session's `id` and `checkout_url` its `url`, left out when Stripe gives none. `amount` and `currency` come from the session's `amount_total` and `currency` through `stripeAmount`. When the product makes a new session for every attempt to pay, `start_id` is the session's `id` as well. When it keeps one session while the cart changes, `start_id` is the start's `occurred_at` in Unix milliseconds, recorded once when the start happens: each start then gets its own `event_id`, and a resend of one start repeats it. Send the same `checkout_id` on the `purchased` that completes the session.
 
 Lines come from `stripe.checkout.sessions.listLineItems(session.id, { limit: 15 })`. For each line, `name` is its `description` and `quantity` its `quantity`. `product_id` is its `price.product`, left out when the line's `price` is null. `price` is its `amount_subtotal` divided by its `quantity`, converted with `stripeAmount`. Never send `price.unit_amount` as it comes. Stripe can leave a line's `description` or `quantity` null, and every line needs both, so leave that line out. `amount` still covers the whole order. On the `purchased` from a completed session, `subtotal` is the session's `amount_subtotal`, and `discount`, `shipping` and `tax` come from `total_details.amount_discount`, `amount_shipping` and `amount_tax`, each converted the same way. Leave `subtotal` out when `amount_subtotal` is null, and the other parts out when `total_details` is null, because `stripeAmount` turns a null into 0.
+
+A cancel is pending when `previous_attributes` names `cancel_at_period_end` and it is now `true`, or names `cancel_at` and the subscription's `cancel_at` now holds a date. Skip every other update, such as one that sets them back, which is how a customer undoes a cancel. The rule holds whether or not the subscription has a `schedule`: a schedule that ends with a cancel sets `cancel_at` itself once its last phase starts, and that update is the request. Stripe can also set `cancel_at_period_end` itself after a disputed payment, if the account asks it to, and this rule sends that as a request too. `ends_at` is `new Date(cancel_at * 1000).toISOString()`, left out when `cancel_at` is null. `reason` is `cancellation_details.feedback`, left out when that is null. A subscription Stripe cancels at once sends only `customer.subscription.deleted`, which is a `churned` alone. Stripe spells it `canceled` and Barua spells it `cancelled`.
+
+A Stripe trial ends in one of two ways (https://docs.stripe.com/billing/subscriptions/trials). It leaves `trialing` in a `customer.subscription.updated` when it turns into a paid plan, or when Stripe pauses it or leaves it `past_due` because no payment method is on file. A trial that is cancelled, or that ends without a payment method on a subscription set to cancel, sends only `customer.subscription.deleted`. The two `trial_ended` rows cover both, so every trial sends one. A trial that turned into a paid plan and is cancelled later sends its `trial_ended` again from the delete with the same `occurred_at`. Barua keeps that one as a `duplicate`. Leave `plan` out of both, because a plan changed after the trial would turn that repeat into `event_id_conflict`.
+
+Stripe's `charge.refunded` fires for partial refunds too, and its charge doesn't list its refunds unless you expand them, so map each refund once, from the refund events in the table. Read the charge with `stripe.charges.retrieve(refund.charge)`. Its `refunded` is true only once the whole charge is refunded, so a refund that leaves part of the payment sends `full: false`. `occurred_at` is the refund's `created`, converted from Unix seconds, so a resend repeats the same event. Segment's `Order Refunded`, GA4's `refund` and Klaviyo's `Refunded Order` carry no refund id, so take `refund_id` and `full` from your own refund record.
+
+Stripe's `invoice.payment_failed` has no core event. When the product emails people about a failed payment, propose a custom `payment_failed` event with an `invoice_id` and an `update_payment_url` the email links to. Give it the `amount` and `currency` due as well, from the invoice's `amount_due` and `currency` through `stripeAmount`, and make both required, because a custom event has no rule that keeps the two together. A play on it is marketing email, like every play today.
 
 Consent: send `marketing_opt_in: false` only for an explicit opt-out, such as someone turning marketing email off. Leave it out when the person made no choice. Under double opt-in, send `true` when they confirm their address, never when they submit the form.
 
@@ -227,16 +355,16 @@ Every error from `/api/integrations/v1` has the body `{"code": "...", "message":
 
 ## Custom events
 
-For a moment only your product has, such as a trial starting, propose custom events with `POST /api/integrations/v1/plan`. Send the full set every time: an approved event you leave out is removed once the new version is approved. Use `not_emitted` for each declarable core event your product has no source for.
+For a moment only your product has, such as a report export, propose custom events with `POST /api/integrations/v1/plan`. Send the full set every time: an approved event you leave out is removed once the new version is approved. Use `not_emitted` for each declarable core event your product has no source for.
 
 ```json
 {
   "events": [
     {
-      "name": "trial_started",
-      "description": "Someone started a trial. Sent when the trial row commits.",
+      "name": "report_exported",
+      "description": "Someone exported a report. Sent when the export row commits.",
       "properties": {
-        "plan": { "type": "string", "required": true, "use": "copy", "max_length": 64 }
+        "report_name": { "type": "string", "required": true, "use": "copy", "max_length": 120 }
       }
     }
   ],
@@ -248,7 +376,7 @@ For a moment only your product has, such as a trial starting, propose custom eve
 | Field | Rule |
 | --- | --- |
 | `events` | Up to 25 custom events. `[]` removes them all. |
-| `name` | Matches `^[a-z][a-z0-9_]{0,63}$`, for example `trial_started`. It can't be a core event name or start with `barua_`, and `constructor` and `prototype` are reserved. It appears once per plan. |
+| `name` | Matches `^[a-z][a-z0-9_]{0,63}$`, for example `report_exported`. It can't be a core event name or start with `barua_`, and `constructor` and `prototype` are reserved. It appears once per plan. |
 | `description` | 1 to 280 characters, trimmed, with no control characters or unpaired UTF-16 surrogates. Say when the event fires in business terms. The owner reads it before approving. |
 | `properties` | Up to 20. Each key matches the same pattern as `name`. `event_id`, `occurred_at`, `copy`, `constructor` and `prototype` are reserved: the first two belong to the envelope. Leave it out or send `{}` for none. `null` is refused. |
 | `type` | One of `string`, `number`, `integer`, `boolean`, `timestamp`, `url`, `currency`. Send email addresses only as `signed_up.email`. |
