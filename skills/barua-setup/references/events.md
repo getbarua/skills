@@ -398,18 +398,19 @@ A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume
 
 ## What a person still does
 
-`GET /api/integrations/v1/setup` returns `{complete, needs_human, optional, done}`. Each entry is a `needs_human` object, `{step, url, why, resume}`. Give the owner `url` and `why`, then follow `resume`. The steps, in the order they're listed:
+`GET /api/integrations/v1/setup` returns `{complete, needs_human, optional, done}`. Each entry is a `needs_human` object, `{step, url, why, resume}`. Give the owner `url` and `why`, then follow `resume`. The workspace owner sees the same steps on the Setup screen, worked out from the same facts. The steps, in the order they're listed:
 
 <!-- docs-check:needs-human -->
 | Step | Pending while |
 | --- | --- |
-| `approve_tracking_plan` | A plan proposal waits for the owner. |
-| `confirm_brand` | A brand proposal waits, or the owner hasn't confirmed a brand yet. |
+| `create_keys` | The workspace has no active test key, or no active live key. |
 | `verify_domain` | The sending domain isn't verified, or the From address doesn't align with it. |
-| `forward_email` | Optional. Nobody has forwarded one of your emails yet. Without one, Barua uses its own design. |
-| `approve_templates` | The workspace has no plays yet, or some play's email isn't approved yet. |
-| `enable_live_events` | Live events aren't switched on for the workspace. |
-| `deploy_live_key` | No live `signed_up` has applied through an active live key. Live means sent in `live` mode and received within 72 hours of its `occurred_at`. A backfill never counts. |
+| `approve_tracking_plan` | A plan proposal waits for the owner. |
+| `forward_email` | Optional, and listed under `optional`. Nobody has forwarded one of your emails yet. Barua reuses its design; without one, Barua uses its own. |
+| `confirm_brand` | The owner hasn't confirmed a brand yet. Once confirmed it stays done, and a later proposal changes nothing. |
+| `approve_templates` | The brand is confirmed and some play's email waits for the owner's review. While Barua is still writing them, nothing is listed. |
+| `enable_live_events` | Both keys exist and the test events have passed, but live events aren't switched on for the workspace. |
+| `deploy_live_key` | Live events are on and the test events have passed, but no live `signed_up` has applied through an active live key. Live means sent in `live` mode and received within 72 hours of its `occurred_at`. A backfill never counts. |
 <!-- /docs-check:needs-human -->
 
 ## Brand tokens
@@ -434,7 +435,7 @@ A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume
 }
 ```
 
-The tokens are `from_name`, `voice`, `language_policy` and `template` with `accent_color`, `logo_url`, `font_family` and `footer_name`. A proposal can't set `site_url`, `from_email`, `reply_to`, `send_policy`, `template.colors` or `template.html`: the owner sets those in Settings, or they come from a forwarded email. Any other key, or an empty string, answers 400 `brand_invalid`. The same tokens again answer `replayed: true` and keep the proposal waiting since the first time, with the `sources` you sent last. A replay with no `sources`, left out or `{}`, keeps the ones the proposal has.
+The tokens are `from_name`, `voice`, `language_policy` and `template` with `accent_color`, `logo_url`, `font_family` and `footer_name`. A proposal can't set `site_url`, `from_email`, `reply_to`, `send_policy`, `template.colors` or `template.html`: the owner sets those in Settings, or they come from a forwarded email. Any other key, or an empty string, answers 400 `brand_invalid`. The same tokens again answer `replayed: true` and keep the proposal waiting since the first time, with the `sources` you sent last. Once the owner has confirmed a brand, nothing is stored and the answer has `"status": "confirmed"` and `needs_human: null`. A replay with no `sources`, left out or `{}`, keeps the ones the proposal has.
 
 ## Erase a person
 
