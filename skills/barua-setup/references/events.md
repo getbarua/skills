@@ -408,7 +408,7 @@ A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume
 | `approve_tracking_plan` | A plan proposal waits for the owner. |
 | `forward_email` | Optional, and listed under `optional`. Nobody has forwarded one of your emails yet. Barua reuses its design; without one, Barua uses its own. |
 | `confirm_brand` | The owner hasn't confirmed a brand yet. Once confirmed it stays done, and a later proposal changes nothing. |
-| `approve_templates` | The brand is confirmed and some play's email waits for the owner's review. While Barua is still writing them, nothing is listed. |
+| `approve_templates` | The brand is confirmed and some play's email waits for the owner's review, or Barua couldn't write a play's emails and nothing is retrying them: the owner sees why under Plays, and an edit to the brand or playbook tries again. While Barua is still writing them, nothing is listed. |
 | `enable_play_emails` | Every template is approved, but play emails aren't on. Approving templates doesn't turn them on: the owner does that on the Setup screen. Ask for it before the live deploy, because an event from before play emails are first on never starts a play. |
 | `enable_live_events` | Both keys exist and the test events have passed, but live events aren't switched on for the workspace. |
 | `deploy_live_key` | Live events are on and the test events have passed, but no live `signed_up` has applied through an active live key. Live means sent in `live` mode and received within 72 hours of its `occurred_at`. A backfill never counts. While play emails are off it isn't listed, so the account that proves the deploy can also start a play. |
