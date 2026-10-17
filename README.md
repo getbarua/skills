@@ -4,13 +4,13 @@ Agent Skills for setting up [Barua](https://barua.ai), lifecycle email that runs
 
 ## barua-setup
 
-Your agent reads your repos, writes server-side emitters for Barua's events, proposes custom events and brand tokens for you to approve, and checks its work with `scripts/verify.mjs` until the events validate. You approve the plan and the brand, and handle DNS and the live key. The skill tells your agent never to send source code to Barua: only events, the tracking plan, brand tokens and the `file:line` each token came from.
+Your agent reads your repos, writes server-side emitters and checks their events with `scripts/verify.mjs`. A management connection lets it finish setup and maintain the workspace through the API. You choose its permissions and whether the plan, brand, plays or launch need your review. It uses your already authorized tools for DNS and production secrets, and proves a new event reaches a delivered email. It sends product facts and configuration to Barua, never source code or environment secrets.
 
 ```sh
 npx skills add getbarua/skills --skill barua-setup
 ```
 
-Then tell your agent: "Set up Barua for this project", and name the repos. It needs a Barua test key as `BARUA_API_KEY` in a dev env file that git ignores. The workspace owner gives you one.
+Then tell your agent: "Set up Barua for this project", and name the repos. Give it an owner-authorized `BARUA_MANAGEMENT_KEY` through your secret store. With only a test key as `BARUA_API_KEY` in an ignored dev env file, it can still implement and validate events and hand over the remaining steps. The helper keeps new credentials out of its output; see [management access](barua-setup/references/management.md).
 
 To install for one agent without prompts, add `-a claude-code` or `-a codex` and `-y`. Or copy `skills/barua-setup/` into your repo's `.claude/skills/` (Claude Code) or `.agents/skills/` (Codex).
 

@@ -2,7 +2,7 @@
 
 Your backend tells Barua what happened in your product, one event per fact, sent from server code after the database commit. This page is that contract. `GET /api/integrations/v1/plan` returns the same contract as JSON, with a JSON Schema for one event, and `GET /api/integrations/v1/events/status` tells you what arrived.
 
-Every path below is under `https://barua.ai/api/integrations/v1` and takes `Authorization: Bearer ik_...`, an integration key your workspace owner gives you. Requests and answers are JSON.
+Every path below is under `https://barua.ai/api/integrations/v1` and takes `Authorization: Bearer ik_...`, an integration key your workspace owner or authorized management connection creates. Requests and answers are JSON. For setup, approval and ongoing control, use the separate [management API](management.md) with a `mk_` key.
 
 For each call below, only the answer in this table means it went through. Treat any other answer as a failure, another 2xx included: an unlisted 200 or 204 came from something between you and Barua, such as a proxy, or from a wrong `BARUA_API_URL`.
 
@@ -16,9 +16,11 @@ For each call below, only the answer in this table means it went through. Treat 
 
 ## Keys
 
-Keys are `test` or `live`. A test key runs the same checks on each event as the live key and reports the verdict: `validated` when it passes, or `quarantined` with its reasons. It stops there and changes nothing about your users in Barua. Its checks never read the people and events the live key sent, so an event the test key validated can still get `duplicate` or `unknown_identity` from the live key. Use the test key in development and CI. The live key lives only in production's hosting secrets, and only a person puts it there.
+Keys are `test` or `live`. A test key runs the same checks on each event as the live key and reports the verdict: `validated` when it passes, or `quarantined` with its reasons. It stops there and changes nothing about your users in Barua. Its checks never read the people and events the live key sent, so an event the test key validated can still get `duplicate` or `unknown_identity` from the live key. Use the test key in development and CI. The live key lives in production's hosting secrets. An agent can install it through an already authorized secret tool without printing it.
 
-Live events are switched on per workspace during early access. Until they're on for yours, a live key gets 403 `feed_not_enabled`. Email chris@barua.ai to switch them on. A test key works either way. Erasing a person needs the live key; a test key gets 403 `test_key_not_allowed`.
+An owner or authorized management connection enables live events after setup checks pass. Until they're on for yours, a live key gets 403 `feed_not_enabled`. A test key works either way. Erasing a person needs a live key; a test key gets 403 `test_key_not_allowed`.
+
+New keys created by a management connection have explicit capabilities. `events:write` admits current events. `history:write` is additionally required for backfill and live events older than 72 hours. Accepted retries retain their original key and idempotency key, even after the event ages past that threshold. Customer lookup needs `people:read`; erasure needs `people:erase`. Restricted keys can read only their own receipts and cannot propose plans or brands; use management actions for those. Existing keys without a capability list keep their prior behavior. Revoking a management connection leaves deployed event keys working, so revoke those separately when intended.
 
 ## Emitter rules
 
@@ -208,7 +210,7 @@ Send one order event per status, from the server code that records it. `order_id
 
 `order_refunded.amount` is what this refund paid back, in major units. A refund is its own event, so its amount is above 0. Barua quarantines a refund of 0 as `invalid_property`. A refund that moved no money, such as one that only puts items back in stock, sends nothing. Send `full: true` when nothing paid is left on the order, including when this refund is the last of several. Send `false` for a partial refund. Barua stores each refund. A full refund also ends the order's paid support, the way a purchases-feed refund does: the order stops counting as paid and stays in the buyer's history. A partial refund changes nothing else. Neither does a full refund whose `occurred_at` isn't later than the order's last update, such as one stamped the same second as its `purchased`. A full refund for an order Barua hasn't seen records that order as refunded. It counts in the buyer's history and doesn't count as paid. Once the owner approves the refund email, each refund also gets one email, which says the amount and whether the order was refunded in full, read from `full`.
 
-A model words Barua's receipt and order update emails once per workspace and language, from the brand pack and playbook, and never sees an order; Barua's code fills in every order detail from the event's own properties: `order_name` (else `order_id`), `amount` with `currency`, each line's `name` and `quantity` with its unit `price`, `receipt_url`, `tracking_url`, `carrier`, `tracking_number`, `eta_date`, `full` and `reason`. A shipment's lines show no price, because a shipment event carries no currency. The email's only link is its button: the `receipt_url` or `tracking_url` the event carried, else the website from the brand pack. Barua refuses any other link, so a receipt hosted by a payment provider works when it arrives as `receipt_url`. None of these emails sends until the workspace owner approves it on the Plays map. After that it goes out without the `marketing_opt_in` check, usually within a few hours of the event. One that can't go out within a day of the event's `occurred_at` is dropped, so send these events as they happen.
+A model words Barua's receipt and order update emails once per workspace and language, from the brand pack and playbook, and never sees an order; Barua's code fills in every order detail from the event's own properties: `order_name` (else `order_id`), `amount` with `currency`, each line's `name` and `quantity` with its unit `price`, `receipt_url`, `tracking_url`, `carrier`, `tracking_number`, `eta_date`, `full` and `reason`. A shipment's lines show no price, because a shipment event carries no currency. The email's only link is its button: the `receipt_url` or `tracking_url` the event carried, else the website from the brand pack. Barua refuses any other link, so a receipt hosted by a payment provider works when it arrives as `receipt_url`. None of these emails sends until the workspace owner or an agent authorized under their policy approves it. After that it goes out without the `marketing_opt_in` check, usually within a few hours of the event. One that can't go out within a day of the event's `occurred_at` is dropped, so send these events as they happen.
 
 Send `trial_ending` when the reminder is due, such as three days before the trial ends. A play only acts at or after a time it reads, so it can't send that reminder from `trial_ends_at` alone. Its `event_id` holds `trial_ends_at` in Unix milliseconds, so when a trial is extended, the reminder for the new end is a new event.
 
@@ -216,7 +218,7 @@ Send `trial_ending` when the reminder is due, such as three days before the tria
 
 Send `signed_in` for someone's first sign-in of each UTC day only. Barua keeps each event as a row until the person is erased, and a play that asks when someone was last seen needs only the latest day. A later sign-in that day has the same `event_id`, so it comes back `event_id_conflict` and adds no row.
 
-`signed_up.type` says how someone joined, such as `organic` or `invited`. `timezone` is an IANA time zone such as `Europe/Oslo`, and `locale` is a BCP 47 language tag such as `en-US`. Barua checks both. A value it can't read, such as `Oslo` or `en_US`, quarantines the whole `signed_up` as `invalid_property`, so leave one out unless it comes from a source that writes these formats, such as the browser's `Intl.DateTimeFormat().resolvedOptions().timeZone` and `navigator.language`. Rules can read them now. Barua's send windows and the language it writes in don't read `timezone` or `locale` yet. A receipt or an order update writes its amounts and dates the way the person's `locale` does.
+`signed_up.type` says how someone joined, such as `organic` or `invited`. `timezone` is an IANA time zone such as `Europe/Oslo`, and `locale` is a BCP 47 language tag such as `en-US`. Barua checks both. A value it can't read, such as `Oslo` or `en_US`, quarantines the whole `signed_up` as `invalid_property`, so leave one out unless it comes from a source that writes these formats, such as the browser's `Intl.DateTimeFormat().resolvedOptions().timeZone` and `navigator.language`. Rules can read them now. When the pixel hasn't given Barua someone's time zone, their marketing email waits for its send window in this `timezone`, so send it when your server knows it. The language Barua writes in doesn't read `locale` yet. A receipt or an order update writes its amounts and dates the way the person's `locale` does.
 
 `consent_updated.method` records how the choice was made, such as `signup_form` or `settings`. It is a record for you, and no play reads it.
 
@@ -350,9 +352,11 @@ Every error from `/api/integrations/v1` has the body `{"code": "...", "message":
 | `unavailable` | 503 | Retry the same request with backoff. Repeating it is safe. |
 | `plan_invalid` | 400 | Fix the fields named in `message`, then propose the full plan again. Names are snake_case, and core event names are taken. |
 | `test_key_not_allowed` | 403 | Test keys can't change live data or read people. Make this call from production with the live key. |
-| `feed_not_enabled` | 403 | Keep using your test key. Email chris@barua.ai to switch live events on. |
+| `feed_not_enabled` | 403 | Keep using your test key. An authorized management connection can request intake.enable after setup is ready. |
 | `send_in_flight` | 409 | A message to this person is finishing. Retry in two minutes. |
 | `brand_invalid` | 400 | Fix the token named in `message` and send the whole proposal again. Send only tokens you found in the repo. |
+| `capability_required` | 403 | Use a key with permission for this action. A workspace owner can authorize a new key. |
+| `history_permission_required` | 403 | Use a key with history:write permission for backfills or events older than 72 hours. Keep retrying an accepted request with its original key and Idempotency-Key. |
 <!-- /docs-check:error-codes -->
 
 ## Custom events
@@ -388,17 +392,17 @@ For a moment only your product has, such as a report export, propose custom even
 | `not_emitted` | Up to 4 declarations, each `{name, reason}`. `name` is a declarable core event: `activated`, `created`, `purchased` or `churned`, each at most once. `signed_up` is required and can't be declared. `reason` follows the `description` rule. Leave it out or send `[]` for none. `null` is refused. |
 <!-- /docs-check:plan-rules -->
 
-A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume}`. Give the workspace owner `url` and `why`, then follow `resume`. Barua accepts a custom event only after the owner approves the version that defines it. Until then it arrives as `unknown_event`, and verify lists it under `awaiting_approval`. Sending the same plan again is safe: it answers 200 with the same version. When it matches the approved plan, the answer is `"status": "approved"` with `needs_human: null`, which means nothing changed.
+A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume}`. Give the workspace owner `url` and `why`, then follow `resume`. Barua accepts a custom event only after the owner or an authorized agent approves the version that defines it. Until then it arrives as `unknown_event`, and verify lists it under `awaiting_approval`. Sending the same plan again is safe: it answers 200 with the same version. When it matches the approved plan, the answer is `"status": "approved"` with `needs_human: null`, which means nothing changed.
 
 ## Check what arrived
 
 `GET /api/integrations/v1/events/status?since=<ISO 8601 time>` reports, per event, what Barua received since that time, for test and live keys apart. Leave `since` out for the last 24 hours. It reaches back at most 7 days. The answer holds counts, reason codes and times, never a user's id or a property value, so a test key can read the live half too.
 
-`verdict.test` and `verdict.live` each carry `exit`: 3 when `missing` or `invalid` has an entry (or more than 10,000 events failed), 4 when only a person can move it on (`needs_human`), and 0 when nothing is left. The skill's `scripts/verify.mjs` prints the verdict for one mode and exits with it. When more than 10,000 failed, `failures_truncated` is `true` and the exit stays 3 for any window that still holds those failures, so fix what is listed and check again with a `since` after your fix.
+`verdict.test` and `verdict.live` each carry `exit`: 3 when `missing` or `invalid` has an entry (or more than 10,000 events failed), 4 when a setup step is still open (`needs_human`); management access may authorize that action, and 0 when nothing is left. The skill's `scripts/verify.mjs` prints the verdict for one mode and exits with it. When more than 10,000 failed, `failures_truncated` is `true` and the exit stays 3 for any window that still holds those failures, so fix what is listed and check again with a `since` after your fix.
 
-## What a person still does
+## Setup handoffs
 
-`GET /api/integrations/v1/setup` returns `{complete, needs_human, optional, done}`. Each entry is a `needs_human` object, `{step, url, why, resume}`. Give the owner `url` and `why`, then follow `resume`. The workspace owner sees the same steps on the Setup screen, worked out from the same facts. The steps, in the order they're listed:
+`GET /api/integrations/v1/setup` returns `{complete, needs_human, optional, done}`. Each entry is a `needs_human` object, `{step, url, why, resume}`. For event-only access, give the owner `url` and `why`, then follow `resume`. An authorized management connection may complete these steps within its grant. The workspace owner sees the same steps on the Setup screen, worked out from the same facts. The steps, in the order they're listed:
 
 <!-- docs-check:needs-human -->
 | Step | Pending while |
@@ -409,8 +413,8 @@ A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume
 | `forward_email` | Optional, and listed under `optional`. Nobody has forwarded one of your emails yet. Barua reuses its design; without one, Barua uses its own. |
 | `confirm_brand` | The owner hasn't confirmed a brand yet. Once confirmed it stays done, and a later proposal changes nothing. |
 | `approve_templates` | The brand is confirmed and some play's email waits for the owner's review, or Barua couldn't write a play's emails and nothing is retrying them: the owner sees why under Plays, and an edit to the brand or playbook tries again. While Barua is still writing them, nothing is listed. |
-| `enable_play_emails` | Every template is approved, but play emails aren't on. Approving templates doesn't turn them on: the owner does that on the Setup screen. Ask for it before the live deploy, because an event from before play emails are first on never starts a play. |
-| `enable_live_events` | Both keys exist and the test events have passed, but live events aren't switched on for the workspace. |
+| `enable_play_emails` | Every template is approved, but play emails aren't on. Approving templates doesn't turn them on. The owner can use Setup, or an authorized management connection can request `sending.enable`. Do this before the live deploy, because an event from before play emails are first on never starts a play. |
+| `enable_live_events` | Both keys exist and the test events have passed, but live events aren't switched on for the workspace. An authorized management connection can request `intake.enable` once setup is ready. The owner can grant access and review a request in Settings, Agents. |
 | `deploy_live_key` | Live events are on and the test events have passed, but no live `signed_up` has applied through an active live key. Live means sent in `live` mode and received within 72 hours of its `occurred_at`. A backfill never counts. While play emails are off it isn't listed, so the account that proves the deploy can also start a play. |
 <!-- /docs-check:needs-human -->
 
