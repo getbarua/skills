@@ -14,26 +14,30 @@ const SECRET_FIELD = /secret|password|authorization|^(?:(?:access|refresh|id|aut
 const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => process.env[name]).filter(Boolean);
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
-Commands: connect, connections, capabilities, setup, operations, status,
+Commands: connect, recover-key, connections, capabilities, setup, operations, status,
           action, resume, cancel, review, wait, proof
 
 BARUA_URL defaults to https://barua.ai. BARUA_MANAGEMENT_KEY authorizes
-management calls. connect/connections/review use BARUA_OWNER_TOKEN and
+management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN and
 BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 
 --input-file <file>       JSON body for connect/action/review; otherwise stdin
 --idempotency-key <id>    required for connect/action; reuse after response loss
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
+                         connection ID for recover-key
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
                              secret goes to its stdin; its output is suppressed
 --timeout-ms <n>         total bound including secret storage, 1..300000, default 60000
 --poll-ms <n>            wait polling interval, 100..10000, default 1000
 
-connect and action key.create require a secret destination before sending.
+connect, recover-key and action key.create require a secret destination before sending.
 resume and wait require one before executing a key.create operation. Never
 reuse an occupied secret file. A failed secret transfer can be recovered by
 repeating the same creation request or resuming its operation with a new file.
+recover-key --id saves the same connection key again with owner authorization;
+it takes no input or idempotency key and never creates another connection.
+After a failed transfer, repeat recover-key with the same ID and a new file.
 wait resumes ready operations and expired leases. It also recovers completed
 key creation into the requested destination. It never grants approval.
 proof --bind-stdin accepts JSON {eventId} to bind a real event; --input-file
@@ -102,7 +106,7 @@ async function inputBody(file, deadline) {
 function secretProcess(argv, env, deadline, input) {
   const transfer = input !== undefined;
   const code = transfer ? 'secret_transfer_failed' : 'secret_destination';
-  const message = transfer ? 'The secret destination command did not complete. Recover the key with the same operation.'
+  const message = transfer ? 'The secret destination command did not complete. Retry the same key request with a new secret destination.'
     : 'Could not check the secret destination Git boundary.';
   const expires = Math.min(deadline, Date.now() + 15000);
   if (Date.now() >= expires) fail(code, message);
@@ -165,7 +169,7 @@ async function secretSink(args, deadline) {
     let saved = false;
     return {
       async save(secret) {
-        if (Date.now() >= deadline) fail('secret_transfer_failed', 'The time limit ended before saving the key. Recover it with the same operation.');
+        if (Date.now() >= deadline) fail('secret_transfer_failed', 'The time limit ended before saving the key. Retry the same key request with a new secret destination.');
         writeFileSync(fd, `${secret}\n`); saved = true; return { secret_saved: true, destination: path };
       },
       close() { closeSync(fd); if (!saved) unlinkSync(path); },
@@ -180,7 +184,7 @@ async function secretSink(args, deadline) {
     return {
       async save(secret) {
         const result = await secretProcess(argv, process.env, deadline, `${secret}\n`);
-        if (result.status !== 0) fail('secret_transfer_failed', 'The secret destination command failed. Recover the key with the same operation.');
+        if (result.status !== 0) fail('secret_transfer_failed', 'The secret destination command failed. Retry the same key request with a new secret destination.');
         return { secret_saved: true, destination: 'command stdin' };
       }, close() {},
     };
@@ -211,10 +215,10 @@ async function main() {
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
-  const commands = ['connect','connections','capabilities','setup','operations','status','action','resume','cancel','review','wait','proof'];
+  const commands = ['connect','recover-key','connections','capabilities','setup','operations','status','action','resume','cancel','review','wait','proof'];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['status','resume','cancel','review','wait','proof'].includes(command);
-  if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes an operation ID.');
+  const hasId = ['recover-key','status','resume','cancel','review','wait','proof'].includes(command);
+  if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a connection or operation ID.');
   const creates = ['connect','action'].includes(command);
   if (creates ? !/^[!-~]{1,128}$/.test(args['idempotency-key'] ?? '') : args['idempotency-key'] !== undefined) {
     fail('invalid_flag', 'Provide an Idempotency-Key for connect or action.');
@@ -222,14 +226,14 @@ async function main() {
   const writes = ['connect','action','review','proof'].includes(command);
   if (args['bind-stdin'] && (command !== 'proof' || args['input-file'])) fail('invalid_flag', 'Use --bind-stdin only with proof and without --input-file.');
   if (!writes && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
-  if (!['connect','action','resume','wait'].includes(command) && (args['secret-file'] || args['secret-command-file'])) {
+  if (!['connect','recover-key','action','resume','wait'].includes(command) && (args['secret-file'] || args['secret-command-file'])) {
     fail('invalid_flag', 'This command does not return a key.');
   }
   let base;
   try { base = new URL(process.env.BARUA_URL ?? 'https://barua.ai'); } catch { fail('invalid_origin', 'BARUA_URL must be an HTTPS origin.'); }
   if ((base.protocol !== 'https:' && !(base.protocol === 'http:' && LOCAL.has(base.hostname))) || base.username || base.password
     || base.pathname !== '/' || base.search || base.hash) fail('invalid_origin', 'BARUA_URL must be an HTTPS origin without credentials, path, query or fragment. HTTP is allowed on localhost.');
-  const owner = ['connect','connections','review'].includes(command);
+  const owner = ['connect','recover-key','connections','review'].includes(command);
   const key = owner ? process.env.BARUA_OWNER_TOKEN : process.env.BARUA_MANAGEMENT_KEY;
   if (!key || /\s/.test(key) || (!owner && !/^mk_[A-Za-z0-9_-]{43}$/.test(key))) fail('missing_credentials', owner ? 'Set BARUA_OWNER_TOKEN.' : 'Set BARUA_MANAGEMENT_KEY to a management key.');
   if (owner && !UUID.test(process.env.BARUA_WORKSPACE_ID ?? '')) fail('missing_workspace', 'Set BARUA_WORKSPACE_ID to the authorized workspace ID.');
@@ -277,13 +281,15 @@ async function main() {
     // A historical success may outlive the key or its recovery permission.
     // Creation/recovery commands succeed only when they deliver the secret;
     // status and owner decisions remain metadata-only reads of that history.
-    if (operation?.action === 'key.create' && operation.status === 'succeeded'
-      && ['action', 'resume', 'wait'].includes(command) && response.body?.secret === undefined) {
+    const managementSecret = ['connect', 'recover-key'].includes(command);
+    if ((managementSecret || (operation?.action === 'key.create' && operation.status === 'succeeded'
+      && ['action', 'resume', 'wait'].includes(command))) && response.body?.secret === undefined) {
       fail('secret_unavailable', 'Barua could not recover this key. Check its current access before continuing.');
     }
     let saved = {};
     if (response.body?.secret !== undefined) {
-      if (typeof response.body.secret !== 'string' || !/^(?:mk|ik)_[A-Za-z0-9_-]{43}$/.test(response.body.secret)) fail('unexpected_response', 'Barua returned an invalid key.');
+      const format = managementSecret ? /^mk_[A-Za-z0-9_-]{43}$/ : /^(?:mk|ik)_[A-Za-z0-9_-]{43}$/;
+      if (typeof response.body.secret !== 'string' || !format.test(response.body.secret)) fail('unexpected_response', 'Barua returned an invalid key.');
       credentials.push(response.body.secret);
       saved = await (await ensureSink()).save(response.body.secret);
     }
@@ -291,9 +297,10 @@ async function main() {
   }
   const prefix = '/api/management/v1';
   try {
-    if (command === 'connect' || (command === 'action' && body.action === 'key.create')) await ensureSink();
+    if (['connect', 'recover-key'].includes(command) || (command === 'action' && body.action === 'key.create')) await ensureSink();
     // Await completion before finally closes/removes a reserved secret file.
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
+    if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
     if (command === 'connections') return await finish(await request('/api/agent-connections'));
     if (['capabilities','setup','operations'].includes(command)) return await finish(await request(`${prefix}/${command}`));
     if (command === 'review') return await finish(await request(`/api/agent-connections/operations/${args.id}/review`, 'POST', body), true);

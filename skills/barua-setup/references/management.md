@@ -13,6 +13,27 @@ The owner creates the connection through Settings → Agents or the owner API
 below. The owner selects permissions and review checkpoints. An expiry is optional.
 `review: []` delegates the permitted actions without an extra review. Checkpoints
 can be any of `plan`, `brand`, `play`, `launch`, and apply to later changes too.
+Full delegation does not add permissions. Check the actual grant before saying
+that launch is allowed.
+
+Management keys have no test or production mode. Their permissions apply to
+the real workspace, including live intake and sending when launch is granted
+and setup requirements are met. Explain this before asking an owner to save
+the key. Store it as `BARUA_MANAGEMENT_KEY` in the agent's secret store and load
+it into the helper's process environment; `manage.mjs` does not read env files
+automatically. Establish a secure destination and a permitted transfer method
+before creating a connection. If browser transfer is unavailable, arrange
+owner-assisted saving and keep the key panel open until saving is confirmed.
+Ask for only the saved location. Continue independent work until it is
+available, then verify access with `capabilities`. The screen's **Access granted**
+status (formerly **Connected**) confirms permission, not that the agent holds a key.
+
+Event keys are separate. Both modes use the `ik_` prefix and `BARUA_API_KEY`:
+the test event key belongs in development or CI, and the live event key belongs
+in production hosting secrets. Read each key's recorded `mode`; its prefix
+cannot distinguish test from live. Use test keys for emitter checks. A management
+key cannot replace either event key, and a test event key does not make management
+actions a dry run.
 
 Start with `GET /capabilities`. It returns the current connection policy and
 legal version. Each action has a JSON input schema alongside its permission
@@ -97,6 +118,7 @@ most 100 records. An exact creation retry reuses its existing connection.
 | Command | Input and result |
 | --- | --- |
 | `connect` | Owner credentials; connection JSON; idempotency key and secret destination; returns connection metadata |
+| `recover-key --id <connection-id>` | Original granting owner's credentials and a secret destination; saves the same active management key without changing policy or pending operations |
 | `connections` | Owner credentials; lists connections |
 | `capabilities`, `setup`, `operations` | Management credentials; read-only discovery and operation listing |
 | `action` | `{action,input}` JSON from stdin or `--input-file`; requires `--idempotency-key` |
@@ -240,6 +262,40 @@ token and `X-Workspace-Id`. The helper reads `BARUA_OWNER_TOKEN` and
 Only the owner can widen a grant. An agent operating under an existing
 management key cannot approve its own required checkpoint or mint another
 management connection.
+
+## Recover a lost management key
+
+The owner who created an active connection can use **Save key again** in
+Settings → Agents. With that owner's already authorized session credentials,
+the helper can save it directly without exposing the key in output:
+
+```sh
+node .agents/skills/barua-setup/scripts/manage.mjs recover-key --id "$BARUA_CONNECTION_ID" --secret-file /private/authorized/new-management.key
+```
+
+Use a new private destination you are authorized to write. The helper requires
+`BARUA_OWNER_TOKEN` and `BARUA_WORKSPACE_ID`; it does not require the missing
+management key. It calls `POST /api/agent-connections/:id/key` with no body or
+idempotency key, reserving the secret destination first. A retry uses the same
+connection ID and a new destination. A successful result includes `secret_saved`.
+Load the saved value into `BARUA_MANAGEMENT_KEY` without printing it, then run
+`capabilities` to verify usable access. Browser-only tools that cannot securely
+transfer credentials need the owner to save the key and share only its location.
+
+Recovery returns the same key with the connection's current permissions. It
+does not create another connection or alter pending operations. It requires
+current terms and the original granting owner to still own the workspace;
+another owner cannot recover that grant's key. Revoked or expired connections
+are refused. A changed server seed or failed hash check refuses recovery.
+Recovery does not rotate a key that may have been exposed.
+
+Before diagnosing an older deployment from a missing button, check the original
+granting owner and active connection, then current terms. If recovery is still
+unavailable, explain that limitation and arrange a replacement
+connection with the owner only after securing its handoff. Do not repeatedly
+ask for an unavailable key. Do not duplicate or revoke existing access
+without authorization. A revoked or expired grant needs a new authorized
+connection or owner-approved renewal, not a recovery retry loop.
 
 ## Complete setup and later changes
 
