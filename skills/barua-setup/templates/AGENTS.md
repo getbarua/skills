@@ -3,7 +3,7 @@
 
 - Barua events go out through `<emitter path>`, with `BARUA_API_KEY` from the environment. Server code only.
 - Before any call to Barua with an event-only key, and before a test run after you change an emit site, run the barua-setup verify script `node <skill dir>/scripts/verify.mjs`, and stop if it exits 2: the key isn't a test key, and a live one would send live events. After the test run, run it again with `--since` and the time you noted before it, such as `--since 2026-10-09T10:00:00Z`.
-- Send each event after the database commit, from a job queue or the platform's `waitUntil`, else await it before responding. A `consent_updated` that turns marketing off goes only through the queue or an outbox. Never `void emit(...)`: the platform can end the invocation after the response, and the event is lost with its failure log.
+- Send each event after the database commit, from a job queue or the platform's `waitUntil`, else await it before responding only when no durable queue or outbox exists. With an outbox, the request waits only for the fact and event to commit, never for a worker, flush, drain or delivery; the worker awaits HTTP outside database transactions. A `consent_updated` that turns marketing off goes only through the queue or an outbox. Never `void emit(...)`: the platform can end the invocation after the response, and the event is lost with its failure log.
 - Retry 429 and 5xx answers and a send that got no answer (a timeout or a network failure), with backoff. The emitter already does.
 - `emit` never throws. Check `ok` on its result and log a failure with the event's name and `event_id`, never the key.
 - Use the test key everywhere except production. Never send from browser code or a database trigger.

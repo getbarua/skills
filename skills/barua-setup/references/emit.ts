@@ -12,9 +12,13 @@
 //   if (!result.ok) console.error('Barua event not sent', event.name, event.event_id, result.status, result.body);
 //
 // Call it after the database commit, from a job queue or your platform's
-// waitUntil, else await it before you respond. Never leave a send running
-// after the response: a serverless or edge platform can end the invocation
-// there, and the event is lost along with its failure log. It retries 429,
+// waitUntil. Only without a durable queue/outbox or waitUntil, await it
+// before you respond. With an outbox, the request waits for the fact and
+// event to commit, never for a worker, flush, drain or delivery. The worker
+// awaits emit outside database transactions, then records the result.
+// Never leave an unowned send running after the response: a serverless or
+// edge platform can end the invocation there, and the event is lost along
+// with its failure log. It retries 429,
 // 5xx and network errors with backoff, a timeout included, which is safe
 // because Barua drops duplicates by event_id. Any other answer comes back at
 // once. Each attempt waits at most ATTEMPT_TIMEOUT_MS for Barua. The first

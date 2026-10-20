@@ -400,7 +400,7 @@ connection or owner-approved renewal, not a recovery retry loop.
    authorized DNS tool. Call `domain.verify` explicitly and read the result.
    Report absent external permissions precisely; Barua does not store DNS or
    hosting credentials for this purpose.
-   When preparing Amazon SES, pass `provider: "ses"` and use the exact domain
+   New setup uses Amazon SES without a provider flag. Use the exact domain
    in the workspace's From address. Read `GET /domain?provider=ses`; verification
    also takes its `configId` and `configGeneration`. Install only the returned
    ownership TXT, DKIM and bounce-subdomain records. Preserve existing Mailgun
@@ -410,10 +410,11 @@ connection or owner-approved renewal, not a recovery retry loop.
    and `activeGeneration` as `expectedGeneration`. This needs `launch:write`
    and follows the optional launch checkpoint. A readiness refusal requires
    the named prerequisite; never bypass it or treat DNS verification as a
-   completed migration. To prepare a rollback, read `GET /domain?provider=mailgun`,
-   verify that exact saved configuration with `provider: "mailgun"`, then
-   activate it with the latest active generation. Only future unsent mail moves;
-   accepted or uncertain attempts are never resent through the other provider.
+   completed setup. An explicit `provider: "mailgun"` setup request is refused.
+   `GET /domain?provider=mailgun` can still read historical configurations;
+   Mailgun activation is no longer available. If a legacy setup request returns
+   `provider_retired`, read the SES state and submit a new request.
+   Accepted or uncertain attempts are never resent through another provider.
 4. Read each play's current revision and token. Inspect renders before approving
    selected languages. Request changes or retry authoring when needed. A later
    update follows the same review policy. Existing approved content can continue
