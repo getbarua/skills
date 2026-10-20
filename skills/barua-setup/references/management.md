@@ -46,8 +46,8 @@ determine whether this agent can perform its corresponding action.
 | Permission | Allows |
 | --- | --- |
 | `setup:write` | Event keys, tracking plan, brand, email layout, domain and delivery proof |
-| `play:write` | Exact play approval, feedback, retry, pause, resume, retirement and enabling play review |
-| `launch:write` | Enabling or stopping live intake and play sending |
+| `play:write` | Play proposals and exact approval, feedback, retry, sending controls, journey cancellation and enabling play review |
+| `launch:write` | Enabling or stopping live intake and play sending; activating a prepared email provider |
 | `history:write` | Authorizing runtime keys to import history |
 | `people:read` | Customer lookup and real-profile preview; runtime keys with this permission |
 | `people:erase` | Erasure actions and runtime keys with this permission |
@@ -56,7 +56,7 @@ determine whether this agent can perform its corresponding action.
 A grant does not establish consent or another lawful basis. Supply a factual
 statement only from an owner or an agent specifically authorized to make it.
 Current terms are required for changes. The stop actions `sending.pause`,
-`intake.disable`, `play.pause` and `key.revoke`, and connection revocation,
+`intake.disable`, `play.pause`, `play.entries.stop`, `play.run.cancel` and `key.revoke`, and connection revocation,
 remain available when terms are stale. Other valid new or retried actions return
 `terms_required` before looking up a prior request or preparing workspace data.
 Resuming a non-stop operation also requires current terms, even if it already
@@ -126,6 +126,11 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `review` | Owner credentials with exact review JSON for the operation UUID |
 | `wait` | Polls and resumes one operation. Completed keys need a secret destination; pending checkpoints need owner review. |
 | `proof` | Proof UUID; `--bind-stdin` or `--input-file` reads `{ "eventId": "<real event id>" }` and retries binding while intake is pending, then polls by UUID. Without either flag it only reads by UUID and ignores stdin. |
+| `play-catalog`, `play-job --id <job-id>` | Current proposal token and rollout readiness; exact preparation state |
+| `play --play-id <slug>` | Review detail and current approval token |
+| `play-definition`, `play-validate`, `play-simulate` | Require `--play-id` and `--revision-id`; simulation takes synthetic timeline JSON from stdin or `--input-file` |
+| `play-runs`, `play-feedback`, `play-trace` | Require `--play-id`; trace also takes a run UUID with `--id`. Pass each returned cursor with `--after`. |
+| `play-paths` | Path counts for `--play-id` and `--revision-id`, including the measured window and completeness |
 
 `--timeout-ms` bounds the whole call or wait (1–300000, default 60000).
 It includes destination checks and secret storage. Each Git check or secret
@@ -139,6 +144,11 @@ object. Exit codes are independent of `verify.mjs`: 0 succeeded/satisfied,
 4 awaiting approval, 5 still pending at timeout. For `proof`, only delivered exits
 0. Provider failure exits 3; unconfirmed delivery exits 5. A timeout is not cancellation.
 Keep the operation UUID and read or resume it later.
+For `play.propose`, `play.request-changes` and `play.retry`, `wait` follows the
+saved preparation job after the operation succeeds. It exits 0 only when the
+job returns a ready revision. `action` acknowledges the operation; it does not
+wait for authored structure or email copy. Preparation states are `accepted`,
+`preparing`, `ready` and `failed`. A timeout retains the same job for later reads.
 
 ## HTTP contract
 
@@ -158,12 +168,18 @@ checkpoint means the permission alone authorizes it.
 | `template.import` | `setup:write` | `brand` |
 | `domain.provision` | `setup:write` | |
 | `domain.verify` | `setup:write` | |
+| `domain.activate` | `launch:write` | `launch` |
+| `play.propose` | `play:write` | |
 | `play.approve` | `play:write` | `play` |
+| `play.discard-proposal` | `play:write` | |
 | `play.retire` | `play:write` | `play` |
 | `play.request-changes` | `play:write` | |
 | `play.retry` | `play:write` | |
 | `play.pause` | `play:write` | |
 | `play.resume` | `play:write` | `play` |
+| `play.entries.stop` | `play:write` | |
+| `play.entries.start` | `play:write` | `play` |
+| `play.run.cancel` | `play:write` | |
 | `review.enable-plays` | `play:write` | `play` |
 | `intake.enable` | `launch:write` | `launch` |
 | `intake.disable` | `launch:write` | |
@@ -189,6 +205,11 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `POST /plays/profiles` | Customer lookup with `{email,after?}` in the private JSON body; requires `people:read` |
 | `GET /plays/:id/template` | Read the play's email template |
 | `POST /plays/:id/preview` | Render preview; a real customer profile requires `people:read` |
+| `GET /plays/catalog`, `/plays/jobs/:jobId` | Read proposal readiness or follow a saved preparation request |
+| `GET /plays/:id/definition` | Exact immutable definition and content hash; takes `revisionId` |
+| `POST /plays/:id/validate`, `/plays/:id/simulate` | Validate an existing revision or simulate its synthetic timeline |
+| `GET /plays/:id/runs`, `/plays/:id/runs/:runId` | Paginated person journeys and their transition evidence; requires `people:read` |
+| `GET /plays/:id/feedback`, `/plays/:id/path-counts` | Feedback lineage and per-revision path counts |
 | `GET /operations` | Summaries of this connection's durable work |
 | `GET /operations/:id` | One full operation, including its prepared input and result |
 | `POST /actions` | Submit `{action,input}` with `Idempotency-Key` |
@@ -197,7 +218,7 @@ a recoverable secret for that connection's own key; consume it through the helpe
 
 Use the literal play routes above; encoded play-route aliases are refused. Play
 detail also remains available at `/plays/:id` for compatibility, except IDs
-`mode`, `map`, `results` and `profiles`, whose names are reserved for discovery routes.
+`mode`, `map`, `results`, `profiles` and `catalog`, whose names are reserved for discovery routes.
 Use `/plays/:id/detail` for all IDs to avoid those collisions. Management refuses
 GET profile lookup so email addresses stay out of its URLs. Play reader
 responses have `canReview: false` because that field controls the browser's
@@ -212,6 +233,73 @@ uses those same three fields in JSON plus exactly one of `example: true` or
 `personId`; its body limit is 1 KiB. Profile lookup also has a 1 KiB body limit
 and returns `next`, which becomes `after` in the next body. Results take one to
 12 repeated `playId` query parameters.
+Run and feedback pages return at most 20 rows and an opaque `next` cursor;
+pass it as `after`. Trace pages use the same contract in execution order.
+Path counts take `revisionId` and cover the latest 30 days, with at most
+10,000 transitions. `complete: false` means the counts cover that bounded
+sample, so do not report them as the whole window. Existing send and goal
+metrics retain their current meaning.
+
+## Propose and operate a branching Play
+
+Read `play-catalog` for `expectedToken` and `branchingEnabled`. When enabled,
+send `play.propose` with that token and a plain-language `intent`. Optional
+`audience`, `goal`, `trigger` and `requirements` make the intended behavior
+precise. Barua writes the structure and every email. Raw graphs and email
+templates are not accepted as proposal input. The complete intent content
+must fit within 24,000 UTF-8 bytes.
+
+Use the returned operation ID with `wait`, then read its ready revision.
+`play-definition` returns the complete definition, exact content hash and
+readiness blockers. `play-validate` validates that saved revision. Simulation
+accepts `{revisionId,input}` over HTTP; the helper wraps its input file using
+`--revision-id`. The synthetic input includes `startedAt`, `language`, `values`
+and optional `until`, `tracking` and `timeline`. Timeline items are either
+`{at,type:"event",name,properties?}` or
+`{at,type:"message",step_id,event:"opened"}`. Message events may also be
+`clicked` or `delivered`. Use made-up values. Simulation never reads a customer
+profile or sends mail; its assumptions describe the delivery checks it omits.
+`values` uses nested objects. Dotted rule paths are not literal object keys.
+For a signup example, supply:
+
+```json
+{
+  "startedAt": "2026-10-20T12:00:00Z",
+  "language": "en",
+  "values": {
+    "events": {
+      "signed_up": { "count": 1 },
+      "activated": { "count": 0 }
+    }
+  }
+}
+```
+
+Use the exact language returned by the saved revision. Read the simulation's
+entry decision before interpreting later paths; a person who does not meet
+the entry rule will not reach an email or branch.
+
+Open reports describe a recorded tracking signal, not proof that a person
+read the email. Click reports are currently disabled for workspace mail.
+Readiness reports a click-dependent path as blocked; absent click collection
+cannot count as no engagement. Use a supported signal or request a revised Play.
+
+Approve the exact revision and languages with the current review token. Approval
+does not enable sending. Existing journeys stay on their approved revision when
+you approve an update.
+
+`play.entries.stop` closes new enrollments while current journeys continue.
+`play.pause` pauses the Play, retaining saved progress. Both use the current
+Play token. Resuming entries or the Play follows the connection's Play checkpoint.
+`play.run.cancel` takes `playId`, `runId` and the run's `expectedRowVersion`.
+Cancellation is terminal; a provider send already in flight can still finish,
+and its receipt is retained. A stopped run is never restarted by that receipt.
+
+To reject an unapproved proposal, use `play.discard-proposal` with its exact
+revision and token. The approved Play is retained. Feedback history links
+requests to resulting revisions and distinguishes approved, discarded and
+superseded work. Accepted guidance stays with that Play; rejected proposals
+do not become standing writing instructions.
 
 Operation pages return up to 20 rows and a `next` cursor. Pass it as `after`
 until `next` is null. List summaries omit `input`, `result` and `authority`;
@@ -312,6 +400,20 @@ connection or owner-approved renewal, not a recovery retry loop.
    authorized DNS tool. Call `domain.verify` explicitly and read the result.
    Report absent external permissions precisely; Barua does not store DNS or
    hosting credentials for this purpose.
+   When preparing Amazon SES, pass `provider: "ses"` and use the exact domain
+   in the workspace's From address. Read `GET /domain?provider=ses`; verification
+   also takes its `configId` and `configGeneration`. Install only the returned
+   ownership TXT, DKIM and bounce-subdomain records. Preserve existing Mailgun
+   records and the domain's root MX. Preparation and verification leave the
+   active sender and sending pause unchanged. Activate the verified target
+   explicitly with `domain.activate`, using its `configId`, `configGeneration`
+   and `activeGeneration` as `expectedGeneration`. This needs `launch:write`
+   and follows the optional launch checkpoint. A readiness refusal requires
+   the named prerequisite; never bypass it or treat DNS verification as a
+   completed migration. To prepare a rollback, read `GET /domain?provider=mailgun`,
+   verify that exact saved configuration with `provider: "mailgun"`, then
+   activate it with the latest active generation. Only future unsent mail moves;
+   accepted or uncertain attempts are never resent through the other provider.
 4. Read each play's current revision and token. Inspect renders before approving
    selected languages. Request changes or retry authoring when needed. A later
    update follows the same review policy. Existing approved content can continue

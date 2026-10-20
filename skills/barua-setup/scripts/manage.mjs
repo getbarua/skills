@@ -15,7 +15,9 @@ const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => pr
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, operations, status,
-          action, resume, cancel, review, wait, proof
+          action, resume, cancel, review, wait, proof, play-catalog, play, play-job,
+          play-definition, play-validate, play-simulate, play-runs, play-trace,
+          play-feedback, play-paths
 
 BARUA_URL defaults to https://barua.ai. BARUA_MANAGEMENT_KEY authorizes
 management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN and
@@ -24,7 +26,11 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --input-file <file>       JSON body for connect/action/review; otherwise stdin
 --idempotency-key <id>    required for connect/action; reuse after response loss
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
-                         connection ID for recover-key
+                         connection ID for recover-key; job ID for play-job;
+                         run ID for play-trace
+--play-id <slug>         exact Play ID for play and play-* inspection commands
+--revision-id <uuid>     immutable revision for definition/validate/simulate/paths
+--after <cursor>         next cursor from operations or Play history pages
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
                              secret goes to its stdin; its output is suppressed
@@ -40,6 +46,9 @@ it takes no input or idempotency key and never creates another connection.
 After a failed transfer, repeat recover-key with the same ID and a new file.
 wait resumes ready operations and expired leases. It also recovers completed
 key creation into the requested destination. It never grants approval.
+For Play authoring actions, wait follows the saved job until its exact revision
+is ready or preparation fails. An accepted operation alone is not a ready Play.
+play-simulate reads synthetic simulation input from JSON; it sends no email.
 proof --bind-stdin accepts JSON {eventId} to bind a real event; --input-file
 also binds. Plain proof --id only reads and never waits for stdin.
 Exit: 0 success, 1 helper/transport error, 2 authorization refused,
@@ -211,19 +220,32 @@ async function main() {
   const { values: args, positionals } = parseArgs({ allowPositionals: true, strict: true, options: {
     help: { type: 'boolean' }, 'input-file': { type: 'string' }, 'idempotency-key': { type: 'string' },
     id: { type: 'string' }, 'secret-file': { type: 'string' },
+    'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' },
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
-  const commands = ['connect','recover-key','connections','capabilities','setup','operations','status','action','resume','cancel','review','wait','proof'];
+  const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-feedback','play-paths'];
+  const commands = ['connect','recover-key','connections','capabilities','setup','operations','status','action','resume','cancel','review','wait','proof',
+    'play-catalog','play-job', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['recover-key','status','resume','cancel','review','wait','proof'].includes(command);
+  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','play-job','play-trace'].includes(command);
   if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a connection or operation ID.');
+  if (playCommands.includes(command) ? !/^[a-z][a-z0-9_]{0,63}$/.test(args['play-id'] ?? '') : args['play-id'] !== undefined) {
+    fail('invalid_flag', 'Provide --play-id for a Play inspection command.');
+  }
+  const needsRevision = ['play-definition','play-validate','play-simulate','play-paths'].includes(command);
+  if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined) {
+    fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
+  }
+  if (args.after !== undefined && (!['operations','play-runs','play-trace','play-feedback'].includes(command) || args.after.length > 256)) {
+    fail('invalid_flag', 'Use --after only with a history page and its returned cursor.');
+  }
   const creates = ['connect','action'].includes(command);
   if (creates ? !/^[!-~]{1,128}$/.test(args['idempotency-key'] ?? '') : args['idempotency-key'] !== undefined) {
     fail('invalid_flag', 'Provide an Idempotency-Key for connect or action.');
   }
-  const writes = ['connect','action','review','proof'].includes(command);
+  const writes = ['connect','action','review','proof','play-simulate'].includes(command);
   if (args['bind-stdin'] && (command !== 'proof' || args['input-file'])) fail('invalid_flag', 'Use --bind-stdin only with proof and without --input-file.');
   if (!writes && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
   if (!['connect','recover-key','action','resume','wait'].includes(command) && (args['secret-file'] || args['secret-command-file'])) {
@@ -296,13 +318,52 @@ async function main() {
     return { exit: operation ? operationExit(operation) : 0, ...response, ...saved };
   }
   const prefix = '/api/management/v1';
+  async function preparedResult(response) {
+    const result = await finish(response, true), operation = operationFrom(response.body);
+    if (command !== 'wait' || !['succeeded','satisfied'].includes(operation.status)
+      || !['play.propose','play.request-changes','play.retry'].includes(operation.action)) return result;
+    const jobId = operation.result?.jobId ?? operation.result?.id ?? operation.input?.jobId;
+    if (!UUID.test(jobId ?? '')) fail('unexpected_response', 'The accepted Play action did not return a preparation request.');
+    let job;
+    while (Date.now() < deadline) {
+      let next;
+      try { next = await request(`${prefix}/plays/jobs/${jobId}`); }
+      catch (error) { if (error.code === 'timeout') break; throw error; }
+      // The operation is already accepted. A poll aborted at our own deadline
+      // cannot turn that saved request into a transport failure.
+      if (next.status === 0 && Date.now() >= deadline) break;
+      if (next.status < 200 || next.status >= 300) return await finish(next);
+      job = next.body;
+      if (!['accepted','preparing','ready','failed'].includes(job?.state)) fail('unexpected_response', 'Barua returned an unknown preparation state.');
+      if (job.state === 'ready') {
+        if (!UUID.test(job.revisionId ?? '')) fail('unexpected_response', 'Preparation finished without an exact Play version.');
+        return { ...result, preparation: job, exit: 0 };
+      }
+      if (job.state === 'failed') return { ...result, preparation: job, exit: 3 };
+      if (Date.now() + poll >= deadline) break;
+      await sleep(poll);
+    }
+    return { ...result, preparation: job ?? { jobId, state: 'accepted' }, exit: 5, timed_out: true };
+  }
   try {
     if (['connect', 'recover-key'].includes(command) || (command === 'action' && body.action === 'key.create')) await ensureSink();
     // Await completion before finally closes/removes a reserved secret file.
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
     if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
     if (command === 'connections') return await finish(await request('/api/agent-connections'));
-    if (['capabilities','setup','operations'].includes(command)) return await finish(await request(`${prefix}/${command}`));
+    if (['capabilities','setup','operations'].includes(command)) return await finish(await request(`${prefix}/${command}${args.after ? `?after=${encodeURIComponent(args.after)}` : ''}`));
+    if (command === 'play-catalog') return await finish(await request(`${prefix}/plays/catalog`));
+    if (command === 'play-job') return await finish(await request(`${prefix}/plays/jobs/${args.id}`));
+    if (playCommands.includes(command)) {
+      const path = `${prefix}/plays/${args['play-id']}`;
+      if (command === 'play') return await finish(await request(`${path}/detail`));
+      if (command === 'play-validate' || command === 'play-simulate') return await finish(await request(`${path}/${command === 'play-validate' ? 'validate' : 'simulate'}`,
+        'POST', { revisionId: args['revision-id'], ...(command === 'play-simulate' ? { input: body } : {}) }));
+      const suffix = { 'play-definition': 'definition', 'play-runs': 'runs', 'play-trace': `runs/${args.id}`,
+        'play-feedback': 'feedback', 'play-paths': 'path-counts' }[command];
+      const query = new URLSearchParams({ ...(needsRevision ? { revisionId: args['revision-id'] } : {}), ...(args.after ? { after: args.after } : {}) });
+      return await finish(await request(`${path}/${suffix}${query.size ? `?${query}` : ''}`));
+    }
     if (command === 'review') return await finish(await request(`/api/agent-connections/operations/${args.id}/review`, 'POST', body), true);
     if (command === 'action') return await finish(await request(`${prefix}/actions`, 'POST', body), true);
     if (command === 'proof') {
@@ -358,7 +419,7 @@ async function main() {
           response = resumed;
           if (response.status < 200 || response.status >= 300 || response.body?.secret !== undefined) return await finish(response, true);
           operation = operationFrom(response.body);
-          if (TERMINAL.has(operation.status)) return await finish(response, true);
+          if (TERMINAL.has(operation.status)) return await preparedResult(response);
         }
         if (Date.now() + poll >= deadline) break;
         await sleep(poll);
@@ -380,7 +441,7 @@ async function main() {
       await ensureSink();
       return await finish(await request(`${prefix}/operations/${args.id}/resume`, 'POST', {}), true);
     }
-    return { ...await finish(response, true), ...(!TERMINAL.has(operation.status) ? { timed_out: true } : {}) };
+    return { ...await preparedResult(response), ...(!TERMINAL.has(operation.status) ? { timed_out: true } : {}) };
   } finally { sink?.close(); }
 }
 

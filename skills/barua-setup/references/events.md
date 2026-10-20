@@ -265,7 +265,7 @@ Stripe's `charge.refunded` fires for partial refunds too, and its charge doesn't
 
 Stripe's `invoice.payment_failed` has no core event. When the product emails people about a failed payment, propose a custom `payment_failed` event with an `invoice_id` and an `update_payment_url` the email links to. Give it the `amount` and `currency` due as well, from the invoice's `amount_due` and `currency` through `stripeAmount`, and make both required, because a custom event has no rule that keeps the two together. A play on it is marketing email. Only Barua's own receipt and order updates, from the core order events, go out without marketing consent.
 
-Consent: send `marketing_opt_in: false` only for an explicit opt-out, such as someone turning marketing email off. Leave it out when the person made no choice. Under double opt-in, send `true` when they confirm their address, never when they submit the form.
+Consent: send `marketing_opt_in: false` only for a recorded negative choice, such as an unchecked checkbox submitted with signup or someone turning marketing email off. Preserve an actual boolean `false` from that stored preference; a truthiness check must not drop it. Leave the property out when there is no recorded choice. Under double opt-in, send `true` when they confirm their address, never when they submit the form.
 
 ## Send events
 
