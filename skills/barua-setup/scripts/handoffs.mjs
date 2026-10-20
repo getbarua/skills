@@ -1,5 +1,5 @@
-// Local receipts preserve owner links when approval finishes before the next
-// setup read. Printing a receipt does not establish that the owner saw it.
+// Local receipts preserve owner links and source gaps through later setup
+// reads. Printing a receipt does not establish that the owner saw it.
 // Create the private journal with mktemp first; this helper never creates it.
 // node handoffs.mjs --record <journal> < response.json
 // node handoffs.mjs --report <journal> < latest-setup.json
@@ -15,6 +15,14 @@ function json(value) {
   try { return JSON.parse(value); } catch { refuse('Expected valid JSON; no input was saved.'); }
 }
 function entry(value, kind) {
+  if (kind === 'needs_server_call') {
+    if (!object(value) || !text(value.source, 1024) || !value.source.includes(':')
+      || !text(value.action, 4096) || !text(value.endpoint, 2048)
+      || !/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \/\S*$/.test(value.endpoint)) {
+      refuse('Each server gap needs a source file:function, action and suggested METHOD /path.');
+    }
+    return { kind, source: value.source, action: value.action, endpoint: value.endpoint };
+  }
   if (!object(value) || !text(value.step, 80) || !/^[a-z][a-z0-9_]*$/.test(value.step)
     || !text(value.url, 2048) || !text(value.why, 4096)) refuse('Each step needs a valid step, URL and reason.');
   let url;
@@ -25,14 +33,19 @@ function entry(value, kind) {
 function receipts(body) {
   if (!object(body)) refuse('Expected an API response object.');
   const required = body.needs_human === undefined ? [] : Array.isArray(body.needs_human) ? body.needs_human : [body.needs_human];
-  const optional = body.optional ?? [];
-  if (!Array.isArray(optional) || required.length + optional.length > MAX_ENTRIES) refuse('Too many or invalid handoff entries.');
-  return [...required.map(value => entry(value, 'needs_human')), ...optional.map(value => entry(value, 'optional'))];
+  const optional = body.optional ?? [], gaps = body.needs_server_call ?? [];
+  if (!Array.isArray(optional) || !Array.isArray(gaps)
+    || required.length + optional.length + gaps.length > MAX_ENTRIES) refuse('Too many or invalid handoff entries.');
+  return [...required.map(value => entry(value, 'needs_human')), ...optional.map(value => entry(value, 'optional')),
+    ...gaps.map(value => entry(value, 'needs_server_call'))];
 }
 function render(entries, done = new Set()) {
-  const unique = new Map(entries.map(value => [JSON.stringify([value.step, value.url]), value]));
+  const unique = new Map(entries.map(value => [JSON.stringify(value.kind === 'needs_server_call'
+    ? [value.kind, value.source, value.endpoint] : [value.step, value.url]), value]));
   if (unique.size > MAX_ENTRIES) refuse('Too many handoff entries.');
-  return [...unique.values()].map(value => `${done.has(value.step) ? 'completed_owner_step' : value.kind}: ${value.step} ${value.url}\n  why: ${value.why}\n`).join('');
+  return [...unique.values()].map(value => value.kind === 'needs_server_call'
+    ? `needs_server_call: ${value.source} ${value.action} Suggested endpoint: ${value.endpoint}\n`
+    : `${done.has(value.step) ? 'completed_owner_step' : value.kind}: ${value.step} ${value.url}\n  why: ${value.why}\n`).join('');
 }
 
 let fd;
@@ -64,7 +77,7 @@ try {
   if (lines.length > MAX_ENTRIES) refuse('Too many saved handoff entries.');
   const previous = lines.map(line => {
     const value = json(line);
-    if (!['needs_human', 'optional'].includes(value?.kind)) refuse('Journal has an invalid receipt.');
+    if (!['needs_human', 'optional', 'needs_server_call'].includes(value?.kind)) refuse('Journal has an invalid receipt.');
     return entry(value, value.kind);
   });
   const output = render(mode === '--record' ? current : [...previous, ...current], new Set(done));

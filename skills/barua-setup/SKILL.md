@@ -1,6 +1,6 @@
 ---
 name: barua-setup
-description: Sets up and maintains Barua lifecycle email for a product. Reads repos, writes server-side emitters, manages plans and plays under an owner's permissions, and verifies fresh delivery. Use for Barua setup, event changes, brand or play updates, launch, key rotation, and event errors. Supports full delegation or owner review at selected checkpoints.
+description: Sets up and maintains Barua email for a product. Reads repos, writes server-side emitters, manages plans, plays, saved segments and one-off campaigns under an owner's permissions, and verifies fresh delivery. Use for setup, event changes, brand or play updates, campaigns, launch, key rotation, and event errors. Supports full delegation or owner review at selected checkpoints.
 license: MIT
 metadata:
   version: "2"
@@ -8,7 +8,7 @@ metadata:
 
 # Barua setup
 
-Barua sends lifecycle email from facts your product's server reports as events. You can complete setup and ongoing changes through its management API within the owner's grant. The owner chooses full delegation or review of the plan, brand, plays or launch. Use already authorized tools to configure DNS and deploy. Put live keys in the host's secret store. If you have only a test integration key, use the legacy event-only path below and report the owner steps.
+Barua sends lifecycle email from facts your product's server reports as events, and one-off campaigns to saved segments. You can complete setup and ongoing changes through its management API within the owner's grant. The owner chooses full delegation or review of the plan, brand, plays, launch or campaign sends. Use already authorized tools to configure DNS and deploy. Put live keys in the host's secret store. If you have only a test integration key, use the legacy event-only path below and report the owner steps.
 
 ## Choose your access path
 
@@ -31,6 +31,40 @@ For delegated setup, propose the full plan even when it is `{"events":[],"not_em
 Sender setup uses Amazon SES by default. Prepare the exact domain in the current From address, verify the returned configuration, and activate it explicitly under the connection's launch policy. Mailgun configurations are historical reads only; do not request Mailgun setup or activation. See the domain steps in `references/management.md`.
 
 Use plain factual prose in the playbook and reports. Name the actual product behavior and outcome. Avoid promotional filler, dramatic fragments, repetitive lists and contrast slogans. Report what you verified and what is waiting. Name the next action in a few sentences.
+
+## Saved segments and one-off campaigns
+
+Read the campaign workflow in `references/management.md` and current
+`capabilities` before taking an action. `segment:write`, `campaign:write` and
+`campaign:send` are separate grants. Campaign review is on by default when an
+owner grants sending; removing that checkpoint requires the owner's explicit
+delegation. Existing setup or play permissions do not grant campaign sending.
+
+Read `segment-fields` for the current `segmentFields` and `mergeFields` before
+writing rules or naming personalization fields. Reuse a saved segment when it
+matches the request, or create one from those supported customer facts.
+Preview it and report missing evidence and exclusions. Give
+Barua the campaign message, supported facts, destination and any required fields.
+Barua drafts and designs the email from the saved brand and voice. Do not
+handwrite HTML or change workspace brand settings to make a one-off email.
+
+After `campaign.prepare`, read the returned job until it finishes, then read
+the campaign's fixed audience, exclusion reasons and each language preview.
+Preparation is not permission to send. Use the exact campaign version and
+prepared revision in `campaign.send`; retain the same operation through an
+owner review. A successful operation can still leave a background job running.
+
+Use `now` for the next allowed send window or `scheduled` with the agreed time
+and time zone. `immediate` skips quiet hours and the 20-hour marketing gap and
+requires explicit authorization for that exception. It still respects consent,
+suppression, an active send, provider checks and expiry. Without an explicit
+expiry, the campaign expires 14 days after sending starts. Do not enable
+lifecycle play sending as a campaign prerequisite.
+
+Follow returned cursors when reading campaigns, segments or recipients.
+Recipient reads need `people:read`; synthetic previews do not. Keep accepted,
+delivered, failed and unknown counts separate. Unknown provider outcomes must
+be reconciled before retrying. Report delivery only when it is recorded.
 
 The API is under `https://barua.ai/api/integrations/v1`, called with `Authorization: Bearer $BARUA_API_KEY`. When `BARUA_API_URL` is set, it replaces `https://barua.ai`. It must be https, because the key travels in a header. Plain http works only for localhost. `references/events.md` is the full contract. `references/reading-repos.md` says where to look in each kind of repo.
 
@@ -55,7 +89,7 @@ This section and the numbered steps below cover event-only access. Use the manag
 - The test key goes in a dev env file as `BARUA_API_KEY`, with an optional `BARUA_API_URL`. verify takes each from the environment first, then from `.env.local`, then from `.env`, in the directory you run it from. Run it from the folder that holds the file.
 - Before you write the key into a file, run `git check-ignore -q <that file>` on the exact file, such as `.env.local`. It exits 0 only when git ignores the file and doesn't track it. On any other exit, stop: don't write the key there, and ask the owner where the product keeps its dev secrets. Stop the same way when `test -L <that file>` exits 0, because the file is a symlink and the key would land wherever it leads.
 - Every call to Barua and every flow you trigger uses the test key. The live key goes only into production's hosting secrets, where the emitters and the erase job use it. Erase takes only the live key, so the test key gets 403 `test_key_not_allowed`, which is expected. If verify exits 2, stop and ask the workspace owner for a Barua test key. Never ask for the live key.
-- Create one private handoff receipt file for this run with `mktemp`. Keep its path. Pass each plan or setup JSON response to `node <skill dir>/scripts/handoffs.mjs --record <receipt-file>` through stdin when you receive it. The helper saves only owner steps and their links. Show its handoff text to the owner. An approval can finish before the next status read, so keep the receipt through the final report.
+- Create one private handoff receipt file for this run with `mktemp`. Keep its path. Pass each plan or setup JSON response to `node <skill dir>/scripts/handoffs.mjs --record <receipt-file>` through stdin when you receive it. The helper saves owner steps and their links, plus local server gaps recorded during repo inspection. Show its handoff text to the owner. An approval can finish before the next status read, so keep the receipt through the final report.
 
 ## Steps
 
@@ -63,12 +97,12 @@ Every step is safe to run again on a repo an earlier run set up. Change what tha
 
 1. Check the key before any other call to Barua: run `node <skill dir>/scripts/verify.mjs` with no flags, where `<skill dir>` is this skill's folder. It only reads. If it exits 2, stop: there is no test key to use, and every later step would act with a live key. On exit 1, fix what `error` says and run it again. Any other exit means a test key. If the key changes during the run, start again here.
 2. Read the contract: `GET /api/integrations/v1/plan`. It lists the core events (`signed_up` is required), any approved custom events, each event's `id_from`, and a JSON Schema for one event.
-3. Read every repo the owner named, as `references/reading-repos.md` describes. For each core event, find the server line where the fact becomes true. Note facts only this product has, such as a trial starting.
+3. Read every repo the owner named, as `references/reading-repos.md` describes. For each core event, find the server line where the fact becomes true. Note facts only this product has, such as a trial starting. As you find frontend actions without a server request, record their source and suggested endpoint with the handoff helper using the reference's local receipt format. This preserves them for the report after backend work.
 4. Propose the plan with `POST /api/integrations/v1/plan` on every run, reruns included. Send the full plan: every custom event the product needs, and a `not_emitted` entry with a reason for each declarable core event the product has no source for (`GET /plan` marks those `declarable`). An approved event or declaration you leave out is removed, so send `"events": []` when the product needs none. The optional `consent_updated` stays out of the plan when the product has no source for it, and goes in the report instead. Always propose even when both arrays are empty: a core-only product still needs an approved plan. Barua compares the plan with the approved one, and `"status": "approved"` means nothing changed. Otherwise show the owner the answer's `needs_human` `url` and `why`, then keep building while they approve.
 5. Write the emitter. Copy `references/emit.ts` into the backend (as `emit.mjs` with the types removed, for plain JavaScript), or write the plain HTTP call from `references/events.md` for another stack. Add an emit call at each commit point. If the product deletes accounts, read the user's email before the delete, and in the same transaction write an erase job that keeps the user's id and that email. The job calls `POST /api/integrations/v1/people/erase` twice, with the id as `external_id` and then with the `email`, because the address Barua holds for the id can be an old one when the email changed. It retries each call until it answers 200 with `"erased": true`, the way `references/events.md` says under "Erase a person", which also covers a delete your database doesn't run and a product with no job queue.
 6. Check it. Step 1 found a test key, so note the current time (`date -u +%Y-%m-%dT%H:%M:%SZ`) and trigger each flow through the product's real code, such as its test suite or a local run. Then run `node <skill dir>/scripts/verify.mjs --since <that time>`. Fix what it lists and run it again, as the exit codes below say, until it exits 0 or 4. verify checks the key on every run, so a key that turns live ends the loop at exit 2 before the next flows. For a queue or outbox, also hold delivery at a local test endpoint while exercising a product request: the request must complete with its event saved before delivery resumes. Check a concurrent request too, to catch a worker holding the product's database lock during HTTP.
 7. Propose brand tokens with `PUT /api/integrations/v1/brand`: the tokens you found, and in `sources` the `file:line` each came from. `references/events.md` lists the tokens it accepts. When you found no token, as in a backend-only repo, skip the call: Barua refuses an empty proposal, and a token with no source is made up. `GET /setup` then keeps `confirm_brand` open until the owner confirms a brand. Before you send it, read `GET /api/integrations/v1/setup`, and skip the call when its `done` list holds `confirm_brand`. That means the owner confirmed a brand, and a proposal sent after that changes nothing: the owner edits a confirmed brand in Settings. While `confirm_brand` is open, send it: the same tokens again keep the proposal the owner has and take the `sources` you send now (sending none keeps the ones it has), so a token found on another line shows its new place, and new tokens replace the proposal.
-8. Read `GET /api/integrations/v1/setup` and record its response with the handoff helper. Pass the same response through stdin to `node <skill dir>/scripts/handoffs.mjs --report <receipt-file>`. Show that report to the owner: it retains earlier review links and marks completed owner steps from the current `done` list. Preserve its exact lines in your final report, including completed steps.
+8. Read `GET /api/integrations/v1/setup` and record its response with the handoff helper. Pass the same response through stdin to `node <skill dir>/scripts/handoffs.mjs --report <receipt-file>`. Show that report to the owner: it retains local server gaps and earlier review links, and marks completed owner steps from the current `done` list. Preserve its exact lines in your final report, including completed steps.
 9. Add `templates/AGENTS.md` to the root `AGENTS.md` of the repo that holds the emitters, and create that file if it's missing. Codex reads it. Claude Code reads `AGENTS.md` on its own only when the repo has no `CLAUDE.md`, so make sure the root `CLAUDE.md` imports it with `@AGENTS.md` on a line of its own: add the line to an existing `CLAUDE.md` that doesn't have it, or create `CLAUDE.md` with only that line. Codex reads an `AGENTS.override.md` instead of the `AGENTS.md` beside it, so when the root has one, add the block there too. Replace an existing block between the same markers. Fill in each placeholder with a path from the repo root: `<emitter path>` with the emitter's, such as `src/lib/barua.ts`, and `<skill dir>` with this skill's folder, such as `.claude/skills/barua-setup`. When the skill sits outside the repo, install it into the repo first, as under Install, so a later agent finds verify at that path. Before you create or change any of these files, run `test -L <file>`, which exits 0 when the file is a symlink, a broken one included. A `CLAUDE.md` or `AGENTS.override.md` that links to the root `AGENTS.md` already shares it, so leave it as it is. Write nothing to or through any other link, and when `AGENTS.md` itself is a link, change none of the three files. Report each link you left as a `needs_human: linked_file` line.
 10. Report in the format below.
 

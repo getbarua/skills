@@ -12,7 +12,7 @@ this API.
 The owner creates the connection through Settings → Agents or the owner API
 below. The owner selects permissions and review checkpoints. An expiry is optional.
 `review: []` delegates the permitted actions without an extra review. Checkpoints
-can be any of `plan`, `brand`, `play`, `launch`, and apply to later changes too.
+can be any of `plan`, `brand`, `play`, `launch`, `campaign`, and apply to later changes too.
 Full delegation does not add permissions. Check the actual grant before saying
 that launch is allowed.
 
@@ -48,6 +48,9 @@ determine whether this agent can perform its corresponding action.
 | `setup:write` | Event keys, tracking plan, brand, email layout, domain and delivery proof |
 | `play:write` | Play proposals and exact approval, feedback, retry, sending controls, journey cancellation and enabling play review |
 | `launch:write` | Enabling or stopping live intake and play sending; activating a prepared email provider |
+| `segment:write` | Creating, updating and previewing saved segments |
+| `campaign:write` | Creating, updating and preparing campaign drafts with Barua |
+| `campaign:send` | Sending, pausing, resuming and cancelling campaigns |
 | `history:write` | Authorizing runtime keys to import history |
 | `people:read` | Customer lookup and real-profile preview; runtime keys with this permission |
 | `people:erase` | Erasure actions and runtime keys with this permission |
@@ -56,12 +59,13 @@ determine whether this agent can perform its corresponding action.
 A grant does not establish consent or another lawful basis. Supply a factual
 statement only from an owner or an agent specifically authorized to make it.
 Current terms are required for changes. The stop actions `sending.pause`,
-`intake.disable`, `play.pause`, `play.entries.stop`, `play.run.cancel` and `key.revoke`, and connection revocation,
+`intake.disable`, `play.pause`, `play.entries.stop`, `play.run.cancel`,
+`key.revoke`, `campaign.pause`, `campaign.cancel`, and connection revocation,
 remain available when terms are stale. Other valid new or retried actions return
 `terms_required` before looking up a prior request or preparing workspace data.
 Resuming a non-stop operation also requires current terms, even if it already
 completed. Operation reads remain available so a fresh process can find the IDs
-needed to stop. Key lists and play details are also readable.
+needed to stop. Key lists, play details and campaign lists are also readable.
 All current workspace owners must accept
 the current terms before live intake can start. Accepting future legal versions
 is never implied by a connection.
@@ -121,6 +125,11 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `recover-key --id <connection-id>` | Original granting owner's credentials and a secret destination; saves the same active management key without changing policy or pending operations |
 | `connections` | Owner credentials; lists connections |
 | `capabilities`, `setup`, `operations` | Management credentials; read-only discovery and operation listing |
+| `segment-fields` | Approved `segmentFields` for audience rules and `mergeFields` for personalization |
+| `segments`, `campaigns` | Saved segment or campaign summaries; use `--after` for another page |
+| `segment --id <segment-id>`, `campaign --id <campaign-id>` | Current detail, versions and prepared previews |
+| `campaign-job --id <job-id>` | One background job's status, error and progress counts |
+| `campaign-recipients --id <campaign-id>` | Current prepared audience results; requires `people:read`; use `--after` for another page |
 | `action` | `{action,input}` JSON from stdin or `--input-file`; requires `--idempotency-key` |
 | `status`, `resume`, `cancel` | Management credentials and `--id` operation UUID |
 | `review` | Owner credentials with exact review JSON for the operation UUID |
@@ -144,6 +153,11 @@ object. Exit codes are independent of `verify.mjs`: 0 succeeded/satisfied,
 4 awaiting approval, 5 still pending at timeout. For `proof`, only delivered exits
 0. Provider failure exits 3; unconfirmed delivery exits 5. A timeout is not cancellation.
 Keep the operation UUID and read or resume it later.
+List commands `operations`, `segments`, `campaigns` and `campaign-recipients`
+accept `--after <cursor>`. Pass the exact returned `next` until it is null;
+the helper reads one page per call. A campaign job is read by its returned UUID,
+not by a page cursor. These reads never consume stdin or submit an action.
+
 For `play.propose`, `play.request-changes` and `play.retry`, `wait` follows the
 saved preparation job after the operation succeeds. It exits 0 only when the
 job returns a ready revision. `action` acknowledges the operation; it does not
@@ -159,6 +173,16 @@ checkpoint means the permission alone authorizes it.
 <!-- docs-check:management-actions -->
 | Action | Permission | Checkpoint |
 | --- | --- | --- |
+| `segment.create` | `segment:write` | |
+| `segment.update` | `segment:write` | |
+| `segment.preview` | `segment:write` | |
+| `campaign.create` | `campaign:write` | |
+| `campaign.update` | `campaign:write` | |
+| `campaign.prepare` | `campaign:write` | |
+| `campaign.send` | `campaign:send` | `campaign` |
+| `campaign.pause` | `campaign:send` | |
+| `campaign.resume` | `campaign:send` | `campaign` |
+| `campaign.cancel` | `campaign:send` | |
 | `key.create` | `setup:write` | |
 | `key.revoke` | `setup:write` | |
 | `plan.propose` | `setup:write` | |
@@ -198,6 +222,11 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | Route under `/api/management/v1` | Behavior |
 | --- | --- |
 | `GET /capabilities` | Current action schemas and grant |
+| `GET /segment-fields` | Current `{segmentFields,mergeFields}` catalogs; use their exact paths and types |
+| `GET /segments`, `/segments/:id` | Saved segments and current detail; lists take `after` and return `next` |
+| `GET /campaigns`, `/campaigns/:id` | Campaign summaries or full prepared detail; lists take `after` and return `next` |
+| `GET /campaigns/:id/recipients` | Prepared audience results; takes `after`, returns `next`, and requires `people:read` |
+| `GET /campaign-jobs/:id` | One preparation, segment preview or send job's status and progress |
 | `GET /setup`, `/plan`, `/events/status`, `/brand`, `/keys`, `/domain` | Current setup and configuration; domain read does not verify DNS or flush sending |
 | `GET /templates/inbound`, `/templates/inbound/:id` | Forwarding address and existing email layouts; requires `setup:write` |
 | `GET /plays`, `/plays/:id/detail` | Play list and exact review detail; the detail route supports every valid play ID |
@@ -350,6 +379,103 @@ token and `X-Workspace-Id`. The helper reads `BARUA_OWNER_TOKEN` and
 Only the owner can widen a grant. An agent operating under an existing
 management key cannot approve its own required checkpoint or mint another
 management connection.
+
+## Send one campaign to a saved segment
+
+Campaigns use a separate grant from lifecycle plays. Campaign and segment reads
+require at least one of `segment:write`, `campaign:write` or `campaign:send`.
+Real-recipient samples and recipient pages also require `people:read`; agents
+without it receive synthetic language previews. Lists return `{segments,next}`,
+`{campaigns,next}` or recipient `{revisionId,items,next}`. Keep following `next`
+as `after` before treating a list as complete. Recipient continuations belong
+to one prepared audience. If a continuation returns 409
+`campaign_snapshot_changed`, reread campaign detail and restart the recipient
+list; do not combine pages from different revisions. List counts that are
+absent are not zero; read campaign detail for current results.
+
+1. Read capabilities, setup, `segment-fields` and existing segments. The field
+   response returns `segmentFields` for conditions and `mergeFields` for email
+   personalization. Use their exact paths and types; do not guess paths from
+   an event name or invent fields absent from the approved catalog.
+   `segment.create` takes
+   `{name,definition}`; `definition` has `{version:1,condition}` using the
+   supported customer-fact condition grammar. `segment.update` additionally
+   takes `segmentId` and the numeric `expectedVersion`. Use recorded facts;
+   missing evidence must not become a zero or an invented trait.
+2. Submit `segment.preview` with `{segmentId,expectedVersion}`. Read its
+   returned job ID with `campaign-job`, then read the segment for counts and
+   exclusions. These counts can change before campaign preparation.
+3. Submit `campaign.create` with `{name,segmentId,segmentVersion,brief}`.
+   `brief.message` states the email's purpose. Optional `facts` supplies
+   supported details, `cta_url` supplies its destination, `required_fields`
+   names fields every recipient must have, and `optional_fields` maps fields
+   to explicit fallbacks. Use the saved brand, voice and email design.
+   `campaign.update` takes those same fields plus `campaignId` and numeric
+   `expectedVersion`; changes require fresh preparation.
+4. Submit `campaign.prepare` with `{campaignId,expectedVersion}`. Keep its
+   returned job ID. Read `campaign-job` until it succeeds or reports a problem,
+   then read `campaign`. Do not equate a successful management operation with
+   a finished job. Inspect the fixed audience, exclusion reasons, each language's
+   subject and rendered preview, and any readiness blocker. Barua writes each
+   language variant and uses checked merge fields; it does not generate a new
+   email separately for each recipient.
+   A ready snapshot can have `snapshot.eligible: 0` and no language previews.
+   Report its counts and exclusion reasons; do not request sending or resuming.
+   An otherwise valid send or resume request returns 409
+   `campaign_empty_audience` before recording an operation.
+   To try a revised audience, use `campaign.update` to create a new
+   campaign revision, then prepare that revision. Calling `campaign.prepare`
+   on the same ready revision returns the saved snapshot without rescanning.
+5. Once sending is authorized, submit `campaign.send` with
+   `{campaignId,expectedVersion,revisionId,mode}`. Use the numeric campaign
+   `revision` from detail for `expectedVersion`, and its `snapshot.id` for
+   `revisionId`. The snapshot is the exact prepared content and audience.
+   `mode: "now"` starts at the next allowed opportunity.
+   `mode: "scheduled"` also needs `scheduledAt` as an ISO timestamp with an
+   offset and the intended IANA `timeZone`.
+   `mode: "immediate"` explicitly skips quiet hours and the 20-hour marketing
+   gap. Obtain authorization for that exception; ordinary urgency does not
+   imply it. All modes preserve consent, suppression, unsubscribe, active-send,
+   provider and expiry checks. Optional `expiresAt` is an ISO timestamp with an
+   offset. If omitted, expiry is 14 days after the scheduled start or, for
+   now/immediate, after the approved operation actually starts sending.
+6. If `campaign` review applies, report the exact pending operation and wait
+   for owner review. The owner sees the proposed mode, schedule, expiry,
+   audience and language previews. Resume that same operation after approval.
+   A content, audience, version or policy change needs a fresh decision.
+   Newly granting campaign sending enables this checkpoint by default; only
+   an explicit owner choice delegates sending without it.
+7. Read campaign detail and, when authorized, every recipient page. The approved
+   audience cannot grow during sending. Consent, suppression and other safety
+   checks can remove recipients. A provider's acceptance is not delivery.
+   Report queued, accepted, delivered, failed, excluded and unknown outcomes
+   accurately. An uncertain provider outcome must be reconciled before another
+   attempt; do not resend it under a new operation.
+
+Campaigns do not require enabling lifecycle play sending. Keep workspace
+configuration unchanged unless the request also authorizes a setup change.
+To pause or cancel a campaign, submit `campaign.pause` or `campaign.cancel` with
+`{campaignId,expectedVersion}`. To resume sending, use `campaign.resume` with
+those fields and the exact `revisionId`; it follows the campaign checkpoint.
+The helper's plain `resume --id` resumes a management operation, not a campaign.
+Cancellation leaves provider-accepted mail and its delivery reports intact.
+
+Read current campaign detail before choosing an action:
+
+| Action | Required campaign state |
+|---|---|
+| `campaign.update` | Sending has not started; not completed, cancelled or expired. Creates a new revision that needs preparation. |
+| `campaign.prepare` | Draft, failed, preparing or ready. Ready returns the existing preparation. |
+| `campaign.send` | Ready or paused; sending has not started. Requires the exact current prepared revision with at least one eligible recipient. |
+| `campaign.resume` | Paused, with the exact current revision already approved and at least one eligible recipient in its prepared audience. |
+| `campaign.pause` | Scheduled, sending or paused. Completed, cancelled and expired campaigns remain unchanged. |
+| `campaign.cancel` | Any state. Completed, cancelled and expired campaigns remain unchanged. |
+
+Expired campaigns cannot be updated, prepared, sent or resumed. These checks
+apply before a new operation is recorded and again at approval and execution.
+An older pending request that no longer meets them cannot be approved; the
+owner can reject or cancel it. Repeating an already completed operation returns
+its saved result without starting another send.
 
 ## Recover a lost management key
 

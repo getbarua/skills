@@ -10,7 +10,17 @@ Nothing you read leaves the machine. Barua gets events, the tracking plan, brand
 - Trace each action to the request it makes, and that request to the backend handler that answers it. The handler is where you emit.
 - In Next.js, files marked `"use server"` and `app/**/route.ts` are server code. Files marked `"use client"` are browser code.
 - Client analytics calls (PostHog, Segment, Mixpanel, gtag) hint at which facts matter. They are never emit sites.
-- An action that makes no request becomes a `needs_server_call` line in the report, with a suggested endpoint. Never emit from the browser to cover it.
+- Record an action that makes no request when you find it. Pass local JSON to `node <skill dir>/scripts/handoffs.mjs --record <receipt-file>` through stdin, using the private receipt file from setup:
+
+  ```json
+  {"needs_server_call":[{"source":"web/editor/Publish.tsx:onPublish","action":"Only changes local state.","endpoint":"POST /api/posts/:id/publish"}]}
+  ```
+
+  Use the actual source and behavior; this is an example, not an event to add.
+  The helper keeps the gap through later API responses and includes its
+  `needs_server_call` line in the final report. The endpoint is a suggestion
+  for the owner, not permission to create it. Never emit from the browser to
+  cover the gap. These local notes are not sent to Barua.
 
 ## Backend
 

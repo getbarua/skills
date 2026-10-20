@@ -15,7 +15,8 @@ const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => pr
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, operations, status,
-          action, resume, cancel, review, wait, proof, play-catalog, play, play-job,
+          action, resume, cancel, review, wait, proof, segments, segment, campaigns,
+          campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace,
           play-feedback, play-paths
 
@@ -26,11 +27,12 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --input-file <file>       JSON body for connect/action/review; otherwise stdin
 --idempotency-key <id>    required for connect/action; reuse after response loss
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
-                         connection ID for recover-key; job ID for play-job;
-                         run ID for play-trace
+                         connection ID for recover-key; segment/campaign ID for its read;
+                         job ID for campaign-job/play-job; run ID for play-trace
 --play-id <slug>         exact Play ID for play and play-* inspection commands
 --revision-id <uuid>     immutable revision for definition/validate/simulate/paths
---after <cursor>         next cursor from operations or Play history pages
+--after <cursor>         next cursor from operations, segment/campaign lists,
+                         campaign recipients or Play history pages
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
                              secret goes to its stdin; its output is suppressed
@@ -227,10 +229,11 @@ async function main() {
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','operations','status','action','resume','cancel','review','wait','proof',
+    'segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
     'play-catalog','play-job', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','play-job','play-trace'].includes(command);
-  if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a connection or operation ID.');
+  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace'].includes(command);
+  if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a UUID.');
   if (playCommands.includes(command) ? !/^[a-z][a-z0-9_]{0,63}$/.test(args['play-id'] ?? '') : args['play-id'] !== undefined) {
     fail('invalid_flag', 'Provide --play-id for a Play inspection command.');
   }
@@ -238,8 +241,10 @@ async function main() {
   if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined) {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
   }
-  if (args.after !== undefined && (!['operations','play-runs','play-trace','play-feedback'].includes(command) || args.after.length > 256)) {
-    fail('invalid_flag', 'Use --after only with a history page and its returned cursor.');
+  const playHistory = ['play-runs','play-trace','play-feedback'].includes(command);
+  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients'].includes(command))
+    || !args.after || args.after.length > (playHistory ? 256 : 2048) || /[\u0000-\u001f\u007f]/.test(args.after))) {
+    fail('invalid_flag', 'Use --after only with a list or history page and its returned cursor.');
   }
   const creates = ['connect','action'].includes(command);
   if (creates ? !/^[!-~]{1,128}$/.test(args['idempotency-key'] ?? '') : args['idempotency-key'] !== undefined) {
@@ -351,7 +356,13 @@ async function main() {
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
     if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
     if (command === 'connections') return await finish(await request('/api/agent-connections'));
-    if (['capabilities','setup','operations'].includes(command)) return await finish(await request(`${prefix}/${command}${args.after ? `?after=${encodeURIComponent(args.after)}` : ''}`));
+    if (['capabilities','setup','operations','segments','campaigns','segment-fields'].includes(command)) {
+      return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
+    }
+    const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs' }[command];
+    if (readRoute) return await finish(await request(`${prefix}/${readRoute}/${args.id}`));
+    if (command === 'campaign-recipients') return await finish(await request(
+      `${prefix}/campaigns/${args.id}/recipients${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     if (command === 'play-catalog') return await finish(await request(`${prefix}/plays/catalog`));
     if (command === 'play-job') return await finish(await request(`${prefix}/plays/jobs/${args.id}`));
     if (playCommands.includes(command)) {
