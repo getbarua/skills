@@ -14,10 +14,10 @@ const SECRET_FIELD = /secret|password|authorization|^(?:(?:access|refresh|id|aut
 const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => process.env[name]).filter(Boolean);
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
-Commands: connect, recover-key, connections, capabilities, setup, operations, status,
+Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
           action, resume, cancel, review, wait, proof, segments, segment, campaigns,
           campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
-          play-definition, play-validate, play-simulate, play-runs, play-trace,
+          play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
           play-feedback, play-paths
 
 BARUA_URL defaults to https://barua.ai. BARUA_MANAGEMENT_KEY authorizes
@@ -33,6 +33,7 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --revision-id <uuid>     immutable revision for definition/validate/simulate/paths
 --after <cursor>         next cursor from operations, segment/campaign lists,
                          campaign recipients or Play history pages
+--status <status>        play-admissions filter: blocked, admitted, expired, cancelled
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
                              secret goes to its stdin; its output is suppressed
@@ -51,6 +52,9 @@ key creation into the requested destination. It never grants approval.
 For Play authoring actions, wait follows the saved job until its exact revision
 is ready or preparation fails. An accepted operation alone is not a ready Play.
 play-simulate reads synthetic simulation input from JSON; it sends no email.
+usage reads the current monthly allowance. play-admissions reads waiting or
+settled starts before a run; it needs customer-read permission. A blocked start
+has no run ID. These commands cannot change an allowance.
 proof --bind-stdin accepts JSON {eventId} to bind a real event; --input-file
 also binds. Plain proof --id only reads and never waits for stdin.
 Exit: 0 success, 1 helper/transport error, 2 authorization refused,
@@ -222,13 +226,13 @@ async function main() {
   const { values: args, positionals } = parseArgs({ allowPositionals: true, strict: true, options: {
     help: { type: 'boolean' }, 'input-file': { type: 'string' }, 'idempotency-key': { type: 'string' },
     id: { type: 'string' }, 'secret-file': { type: 'string' },
-    'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' },
+    'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' }, status: { type: 'string' },
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
-  const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-feedback','play-paths'];
-  const commands = ['connect','recover-key','connections','capabilities','setup','operations','status','action','resume','cancel','review','wait','proof',
+  const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
+  const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
     'segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
     'play-catalog','play-job', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
@@ -241,10 +245,16 @@ async function main() {
   if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined) {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
   }
-  const playHistory = ['play-runs','play-trace','play-feedback'].includes(command);
+  const playHistory = ['play-runs','play-trace','play-admissions','play-feedback'].includes(command);
   if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients'].includes(command))
     || !args.after || args.after.length > (playHistory ? 256 : 2048) || /[\u0000-\u001f\u007f]/.test(args.after))) {
     fail('invalid_flag', 'Use --after only with a list or history page and its returned cursor.');
+  }
+  if (command === 'play-admissions' && args.after !== undefined && !UUID.test(args.after)) {
+    fail('invalid_flag', 'Use the UUID cursor returned by the admissions page.');
+  }
+  if (args.status !== undefined && (command !== 'play-admissions' || !['blocked','admitted','expired','cancelled'].includes(args.status))) {
+    fail('invalid_flag', 'Use --status only for play-admissions with a supported status.');
   }
   const creates = ['connect','action'].includes(command);
   if (creates ? !/^[!-~]{1,128}$/.test(args['idempotency-key'] ?? '') : args['idempotency-key'] !== undefined) {
@@ -356,7 +366,7 @@ async function main() {
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
     if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
     if (command === 'connections') return await finish(await request('/api/agent-connections'));
-    if (['capabilities','setup','operations','segments','campaigns','segment-fields'].includes(command)) {
+    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields'].includes(command)) {
       return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     }
     const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs' }[command];
@@ -371,8 +381,8 @@ async function main() {
       if (command === 'play-validate' || command === 'play-simulate') return await finish(await request(`${path}/${command === 'play-validate' ? 'validate' : 'simulate'}`,
         'POST', { revisionId: args['revision-id'], ...(command === 'play-simulate' ? { input: body } : {}) }));
       const suffix = { 'play-definition': 'definition', 'play-runs': 'runs', 'play-trace': `runs/${args.id}`,
-        'play-feedback': 'feedback', 'play-paths': 'path-counts' }[command];
-      const query = new URLSearchParams({ ...(needsRevision ? { revisionId: args['revision-id'] } : {}), ...(args.after ? { after: args.after } : {}) });
+        'play-admissions': 'admissions', 'play-feedback': 'feedback', 'play-paths': 'path-counts' }[command];
+      const query = new URLSearchParams({ ...(needsRevision ? { revisionId: args['revision-id'] } : {}), ...(args.after ? { after: args.after } : {}), ...(args.status ? { status: args.status } : {}) });
       return await finish(await request(`${path}/${suffix}${query.size ? `?${query}` : ''}`));
     }
     if (command === 'review') return await finish(await request(`/api/agent-connections/operations/${args.id}/review`, 'POST', body), true);

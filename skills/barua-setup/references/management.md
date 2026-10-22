@@ -238,6 +238,8 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `GET /plays/:id/definition` | Exact immutable definition and content hash; takes `revisionId` |
 | `POST /plays/:id/validate`, `/plays/:id/simulate` | Validate an existing revision or simulate its synthetic timeline |
 | `GET /plays/:id/runs`, `/plays/:id/runs/:runId` | Paginated person journeys and their transition evidence; requires `people:read` |
+| `GET /usage` | Monthly workflow starts, allowance and enforcement state. A null allowance means unassigned, not zero. |
+| `GET /plays/:id/admissions` | Starts waiting for allowance or settled before a run began; requires `people:read`. Supports `status` and `after`. |
 | `GET /plays/:id/feedback`, `/plays/:id/path-counts` | Feedback lineage and per-revision path counts |
 | `GET /operations` | Summaries of this connection's durable work |
 | `GET /operations/:id` | One full operation, including its prepared input and result |
