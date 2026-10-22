@@ -382,7 +382,7 @@ For a moment only your product has, such as a report export, propose custom even
 | Field | Rule |
 | --- | --- |
 | `events` | Up to 25 custom events. `[]` removes them all. |
-| `name` | Matches `^[a-z][a-z0-9_]{0,63}$`, for example `report_exported`. It can't be a core event name or start with `barua_`, and `constructor` and `prototype` are reserved. It appears once per plan. |
+| `name` | Matches `^[a-z][a-z0-9_]{0,63}$`, for example `report_exported`. It can't be a core event name or start with `barua_`, and `constructor` and `prototype` are reserved. The fixed names `pixel_page_viewed`, `pixel_product_viewed`, `pixel_searched` and `pixel_cart_observed` are reserved for pixel activity. It appears once per plan. |
 | `description` | 1 to 280 characters, trimmed, with no control characters or unpaired UTF-16 surrogates. Say when the event fires in business terms. The owner reads it before approving. |
 | `properties` | Up to 20. Each key matches the same pattern as `name`. `event_id`, `occurred_at`, `copy`, `constructor` and `prototype` are reserved: the first two belong to the envelope. Leave it out or send `{}` for none. `null` is refused. |
 | `type` | One of `string`, `number`, `integer`, `boolean`, `timestamp`, `url`, `currency`. Send email addresses only as `signed_up.email`. |

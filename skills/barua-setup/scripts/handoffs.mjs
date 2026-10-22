@@ -48,6 +48,34 @@ function render(entries, done = new Set()) {
     : `${done.has(value.step) ? 'completed_owner_step' : value.kind}: ${value.step} ${value.url}\n  why: ${value.why}\n`).join('');
 }
 
+// GET /setup lists only actions ready now. While Barua is writing templates,
+// neither review nor enablement appears there, even though both remain ahead.
+// Preserve these future steps explicitly instead of claiming setup has only
+// the currently visible work left. Derive links from this response's workspace,
+// never an older receipt, and never mark an unfinished action completed.
+function upcoming(entries, done) {
+  if (!done.has('confirm_brand')) return [];
+  const ready = new Set(entries.map(value => value.step));
+  const pending = [
+    { step: 'approve_templates', path: 'plays',
+      why: 'When Barua finishes writing the emails, review and approve them before sending.' },
+    { step: 'enable_play_emails', path: 'settings/setup',
+      why: 'After every email is approved, turn play emails on before deploying the live key. Approval alone does not enable them.' },
+  ].filter(value => !done.has(value.step) && !ready.has(value.step));
+  if (!pending.length) return [];
+  const scopes = new Set(entries.flatMap(value => {
+    if (!value.url) return [];
+    const url = new URL(value.url);
+    const match = /^#\/w\/([A-Za-z0-9_-]+)\/(?:plays|settings\/(?:setup|deliverability|plan|agents))(?:\?.*)?$/.exec(url.hash);
+    return url.pathname === '/app/' && match ? [`${url.origin}/app/#/w/${match[1]}`] : [];
+  }));
+  // An empty action list during authoring has no workspace identity. Do not
+  // borrow an old receipt's workspace or report that no owner work remains.
+  if (scopes.size !== 1) refuse('Pending email setup has no single current workspace link. Refresh setup when email review is ready, then rerun the report.');
+  const [scope] = scopes;
+  return pending.map(({ path, ...value }) => ({ ...value, url: `${scope}/${path}`, kind: 'pending_owner_step' }));
+}
+
 let fd;
 try {
   const [mode, path] = process.argv.slice(2);
@@ -80,7 +108,8 @@ try {
     if (!['needs_human', 'optional', 'needs_server_call'].includes(value?.kind)) refuse('Journal has an invalid receipt.');
     return entry(value, value.kind);
   });
-  const output = render(mode === '--record' ? current : [...previous, ...current], new Set(done));
+  const completed = new Set(done);
+  const output = render(mode === '--record' ? current : [...previous, ...current, ...upcoming(current, completed)], completed);
   if (mode === '--record' && current.length) {
     const append = Buffer.from(current.map(value => JSON.stringify(value) + '\n').join(''));
     if (previous.length + current.length > MAX_ENTRIES || fstatSync(fd).size + append.length > MAX_FILE) refuse('Journal limit reached; keep it and report its saved handoffs.');
