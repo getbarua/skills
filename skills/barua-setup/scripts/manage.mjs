@@ -29,8 +29,11 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 
 --input-file <file>       JSON body for connect/action/review; otherwise stdin
 --journey-review-file <file>  private source review for plan.propose or brand actions;
+                             exact per-Play request for play.propose;
                              exact approval observations for play.approve;
                              requires its current generated .md sibling
+--opportunity-id <id>    reviewed marketing opportunity for play.propose;
+                         requires --journey-review-file
 --idempotency-key <id>    required for connect/action; reuse after response loss
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
                          connection ID for recover-key; segment/campaign ID for its read;
@@ -242,6 +245,7 @@ async function main() {
     'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' }, status: { type: 'string' },
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
     'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
+    'opportunity-id': { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
@@ -307,9 +311,11 @@ async function main() {
     fail('invalid_action', 'Send {action, input} with an input object.');
   }
   let journey, journeyBytes = 0;
+  if (args['opportunity-id'] !== undefined && (command !== 'action' || body.action !== 'play.propose' || !args['journey-review-file']))
+    fail('invalid_flag', 'Use --opportunity-id with play.propose and --journey-review-file.');
   if (args['journey-review-file']) {
-    if (command !== 'action' || !['plan.propose', 'plan.approve', 'brand.confirm', 'brand.update', 'play.approve'].includes(body.action))
-      fail('invalid_flag', 'Use --journey-review-file with a plan action, brand action or Play approval.');
+    if (command !== 'action' || !['plan.propose', 'plan.approve', 'brand.confirm', 'brand.update', 'play.approve', 'play.propose'].includes(body.action))
+      fail('invalid_flag', 'Use --journey-review-file with a plan action, brand action, Play proposal or Play approval.');
     let review;
     try { review = await import(new URL('./journey-review.mjs', import.meta.url)); }
     catch (error) {
@@ -328,7 +334,7 @@ async function main() {
     } else if (body.action === 'plan.approve') {
       review.checkDiscovery(artifact.review);
       journey = { review, artifact };
-    } else review.checkSubmission(artifact.review, body);
+    } else review.checkSubmission(artifact.review, body, args['opportunity-id']);
   }
   let sink;
   const ensureSink = async () => (sink ??= await secretSink(args, deadline));

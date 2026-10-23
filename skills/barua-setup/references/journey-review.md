@@ -113,6 +113,7 @@ the review and must remain unchanged when a row is refined.
 | Top-level field | Content |
 | --- | --- |
 | `version` | `1` |
+| `authoring_mode` | New artifacts use `"per_play"`: shared product facts and complete individual Play requests. Omit only when preserving a legacy artifact's full-playbook behavior. |
 | `product` | The product being reviewed |
 | `captured_at` | When the source and workspace observations were made |
 | `sources` | Objects with `repo` and `revision`; use the inspected commit, or explain an unversioned source |
@@ -250,8 +251,10 @@ observed facts separate from the proposed decision to send a message.
 Trace each required observation into the exact event fields or an authoritative
 read the consuming system can actually perform. A proposed read needs a named
 implementation dependency until it exists. Keep material conditions in the
-generated playbook too. A source reference or private note cannot replace the
-rule the message consumer receives.
+compiled per-Play request, or in the generated playbook for a legacy artifact.
+A source reference or private note cannot replace the rule the message consumer
+receives. Copy facts and usable URLs must also reach the shared playbook or the
+approved copy fields that the email writer actually reads.
 
 ## Check coverage before plan operations
 
@@ -307,8 +310,11 @@ node .agents/skills/barua-setup/scripts/journey-review.mjs --render playbook \
 ```
 
 Copy those exact UTF-8 bytes into `input.playbook` when building the action
-JSON. The output is already trimmed and has no final newline. It preserves
-all documented covered rules, including implementation work and planned events.
+JSON. The output is already trimmed and has no final newline. In `per_play`
+mode it contains each covered row's kind, context, facts and sending owners.
+Complete message rules go into the individual requests below. A legacy artifact
+without the mode keeps all documented covered rules in this playbook, including
+implementation work and planned events.
 The playbook keeps labeled plain text, with shorter repeated labels to save
 space. `Sends now` records current ownership; `Send via` records proposed
 ownership. Field values and their line boundaries remain intact for email facts,
@@ -324,8 +330,8 @@ reach that consumer. Resolving a hold requires a new render and review.
 The generated playbook must fit both existing limits: 24,000 JavaScript
 characters and 32,768 UTF-8 bytes. The latter prevents the proposal consumer
 from cutting off its end. An oversized result is refused, with both sizes and
-the largest rows. Use that measurement to plan a compaction pass across repeated
-explanation in the authoritative fields. Preserve every opportunity and material
+the largest rows. New artifacts use `per_play` so complete message rules do not
+compete for this shared space. Preserve every opportunity and material
 condition; do not drop or merge distinct decisions to fit. Regenerate and measure
 before preparing the review packet, then repeat the independent comparison if
 inputs changed after review. Nothing is truncated or silently replaced. The
@@ -349,6 +355,60 @@ the same rationale in outcome, reason and dependency. Preserve all material
 rules. Reserve time for final review, corrections and the permitted API/draft
 work rather than treating a finished private document as the outcome.
 
+### Preserve complete rules in each Play request
+
+Use the new template's `authoring_mode: "per_play"` before drafting. Record an
+`execution_target` on every opportunity:
+
+- `{"type":"marketing"}` declares a covered Barua marketing Play, with its
+  normal consent requirements. A service need can use this lane only when the
+  reviewed ownership and consent rules allow it.
+- `{"type":"fixed_service","purposes":["receipt"]}` declares one or more of
+  Barua's fixed purposes: `receipt`, `order_shipped`, `order_delivered`,
+  `order_delayed`, `order_cancelled`, `order_refunded`. Review each actual
+  purpose's revision separately. These are never marketing proposals.
+- `{"type":"none"}` is required for held, external and control decisions.
+  It does not authorize a Play proposal or approval.
+
+The target is a reviewed declaration, not evidence that the sender or consent
+choice is correct. Independent review compares it with the full source and
+rules. The helper refuses executable targets on held or control rows and keeps
+exact approval targets in the declared lane.
+
+The packet adds `play_requests`, one entry per marketing target. Each contains
+`opportunity_id`, `action: "play.propose"` and `input`. All original message-rule
+fields and every covered control are included. Controls retain their scopes;
+unrelated message rows are not implicit dependencies. Expand any required
+condition from another row into the consuming row before review. The packet
+contains the exact complete requests, not summaries or extra reviewer digests.
+
+Each request must fit the existing limits: intent 4,000 characters, audience
+2,000, trigger and goal 1,000 each, and at most 12 requirement strings of 1,000
+each. Complete intent JSON must fit 24,000 UTF-8 bytes. Characters use JavaScript
+string lengths. The helper refuses chunks that trimming would change, and a
+complete packet over 512 KiB. An over-limit request is a transport limitation;
+do not remove conditions, controls or decisions to make it pass.
+
+After plan approval and brand confirmation, inspect any automatically prepared
+drafts against the complete requests. Shared factual context alone does not
+establish their intended triggers or stops. Adopt only an exact match. For a
+missing supported marketing Play, select its packet entry, remove only the
+`opportunity_id` wrapper field, and add the current `input.expectedToken` from
+`play-catalog`. Keep the other input values and strings unchanged. Calculate the ordinary
+action digest, record the source-based claim review and regenerate Markdown.
+Both the local action check and `manage.mjs action` require
+`--journey-review-file <audit.json> --opportunity-id <opportunity-id>`.
+The helper recompiles the request and refuses a mismatch before HTTP.
+
+Propose one Play, wait for its operation, then read the current catalog before
+the next proposal. The returned Play ID may differ from the opportunity ID;
+record that mapping and inspect its exact rules and every email example before
+approval. A test fixture with no authoring worker cannot prove these requests
+complete: inspect its supplied drafts and report other work unfinished.
+Creating a new Play does not replace an approved one. Small corrections use
+the existing feedback action; do not squeeze a full replacement into its
+4,000-character note or retire a live Play to work around that limit.
+
 ## Prepare the review packet and task
 
 Prepare a private packet input with `plan_input` (the full intended proposal)
@@ -367,7 +427,9 @@ node .agents/skills/barua-setup/scripts/journey-review.mjs --render packet \
 
 The packet contains `strategy_sha256`, `plan_input`, `plan_sha256`,
 `brand_patch`, `brand_patch_sha256`, the generated `playbook` and
-`playbook_sha256`. Supplying `checklist` also returns `checklist_sha256`.
+`playbook_sha256`. In `per_play` mode it also contains the exact `play_requests`.
+The reviewer checks each request and target against the linked opportunity and
+all applicable controls. Supplying `checklist` also returns `checklist_sha256`.
 
 If your harness supplies `BARUA_SETUP_REVIEW_CONTEXT_FILE`, use that private
 context file unchanged as the task formatter's `--input-file`. It contains the
@@ -442,6 +504,10 @@ message is not a completed review.
 
 The canonical task requires a source-derived plain JSON checklist before any
 artifact reads, then comparison of the complete strategy and intended inputs.
+The reviewer emits the checklist as an intermediate text block and immediately
+follows it with the event-contract `Read` in the same response. Returning the
+checklist ends the native task before comparison; it is an incomplete review.
+Only the final judgment completes the task.
 For this recorded protocol, the reviewer must use `Read` on `strategy_file`,
 the actual journey JSON. Its matching generated Markdown remains the full
 human-readable view. The final result uses the task's exact top-level receipt
@@ -559,21 +625,24 @@ contract.
 
 ## Carry the intent into actual plays
 
-Keep stable opportunity IDs and the material rules in the generated playbook.
-Compact repeated explanation in authoritative fields while preserving every
-material rule and journey. If an input limit prevents
+Keep stable opportunity IDs and every material rule in the artifact. With
+`per_play`, the compiled requests carry those rules; the playbook carries shared
+context. Legacy artifacts retain rules in the playbook. If an input limit prevents
 representing the intended scope, report that limit and keep the full artifact;
 never silently submit a smaller strategy as complete.
 
 Use the authoring path the workspace supports:
 
 - Default play creation: the confirmed or updated brand playbook feeds Barua's
-  automatic proposals. Inspect the resulting catalog and exact revisions.
-- When capabilities permit branching proposals: use `play.propose` with
-  plain-language intent for a new Play, then wait for the exact prepared
+  automatic proposals. In `per_play` mode that input has shared context only;
+  inspect the resulting catalog and reconcile exact revisions against the full
+  opportunity rules. Automatic generation does not establish rule coverage.
+- With confirmed brand context, Play review and the connection's proposal
+  permission: use the compiled `play.propose` request for a new Play, then wait for the exact prepared
   revision. Change an existing Play through `play.request-changes` with its
   current token. A new proposal does not replace or stop an existing Play.
-  Barua owns the graph and copy. Do not enable a feature flag or write a graph
+  Barua writes a sequential Play when branching is disabled and a graph when
+  enabled. Do not enable a feature flag or write a graph
   to bypass unavailable capabilities.
 
 Before approving any play, reconcile its actual rules and rendered emails

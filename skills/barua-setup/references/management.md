@@ -286,14 +286,22 @@ Path counts take `revisionId` and cover the latest 30 days, with at most
 sample, so do not report them as the whole window. Existing send and goal
 metrics retain their current meaning.
 
-## Propose and operate a branching Play
+## Propose and operate a Play
 
-Read `play-catalog` for `expectedToken` and `branchingEnabled`. When enabled,
-send `play.propose` with that token and a plain-language `intent`. Optional
+Read `play-catalog` for `expectedToken` and `branchingEnabled`. With confirmed
+brand context and Play review enabled, send `play.propose` with that token and
+a plain-language `intent`. Branching disabled produces a sequential Play;
+branching enabled produces a graph. Optional
 `audience`, `goal`, `trigger` and `requirements` make the intended behavior
 precise. Barua writes the structure and every email. Raw graphs and email
 templates are not accepted as proposal input. The complete intent content
 must fit within 24,000 UTF-8 bytes.
+
+For onboarding, use the exact request in the reviewed packet's `play_requests`.
+Pass `--journey-review-file` and its `--opportunity-id` to `manage.mjs action`;
+follow [the per-Play workflow](journey-review.md#preserve-complete-rules-in-each-play-request)
+to bind the current token and action review. Submit one proposal at a time,
+wait for its revision, then refresh the catalog before the next proposal.
 
 `play.propose` creates a new distinct Play. To change an existing Play, use
 `play.request-changes` with its current token and feedback. Creating another
@@ -627,8 +635,10 @@ review flow under the current grant.
    Mailgun activation is no longer available. If a legacy setup request returns
    `provider_retired`, read the SES state and submit a new request.
    Accepted or uncertain attempts are never resent through another provider.
-4. Inspect the automatic proposals produced from the brand playbook. When
-   branching proposals are enabled, use `play.propose` for a new Play; use
+4. Inspect automatic proposals against the complete journey rules. Shared
+   context in a `per_play` playbook alone does not establish rule coverage.
+   Use the matching reviewed `play.propose` request for a missing supported
+   marketing Play; use
    `play.request-changes` for an existing Play. Wait for the exact prepared
    revision. Read each play's current
    revision and token. Reconcile its rules and renders with the journey before

@@ -35,10 +35,48 @@ const STRATEGY_FIELDS = [
 ];
 const HELD_FIELDS = new Set(['journey_ids', 'kind', 'outcome', 'reason', 'dependency', 'next_action',
   'current_sender', 'proposed_sender']);
+const SHARED_FIELDS = new Set(['kind', 'context', 'facts', 'current_sender', 'proposed_sender']);
+// Mirrors program/types.ts. These purposes are code-defined, never authored by
+// play.propose, even when one reviewed service opportunity covers several.
+const SERVICE_PURPOSES = new Set(['receipt', 'order_shipped', 'order_delivered', 'order_delayed', 'order_cancelled', 'order_refunded']);
 const lf = value => value.replace(/\r\n?/g, '\n');
 const recorded = value => value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)
   ? 'Not recorded' : typeof value === 'string' ? lf(value) : JSON.stringify(stable(value));
 const strategyValue = value => Array.isArray(value) && value.length ? value.map(recorded).join('; ') : recorded(value);
+
+function perPlay(review) {
+  if (!object(review) || !Object.hasOwn(review, 'authoring_mode')) return false;
+  if (review.authoring_mode !== 'per_play') fail('Use authoring_mode per_play, or omit it for the legacy playbook.');
+  if (!Array.isArray(review.opportunities)) fail('Record opportunity rows for per_play authoring.');
+  for (const row of review.opportunities ?? []) {
+    if (!object(row)) fail('Record opportunity objects for per_play authoring.');
+    const target = row.execution_target;
+    const keys = target?.type === 'fixed_service' ? ['type', 'purposes'] : ['type'];
+    if (!object(target) || !['marketing', 'fixed_service', 'none'].includes(target.type)
+      || Object.keys(target).some(key => !keys.includes(key)))
+      fail(`Record a typed execution_target for ${recorded(row.id)}: marketing, fixed_service or none.`);
+    if (target.type !== 'none' && (row.decision !== 'covered' || row.kind === 'control'
+      || !text(row.kind)))
+      fail(`Only covered, non-control opportunities owned by Barua can execute: ${recorded(row.id)}.`);
+    // The typed target declares Barua ownership/marketing consent. Independent
+    // source review checks consistency with the verbatim sender and rules;
+    // guessing authority from their free-form prose would not prove it.
+    if (target.type === 'marketing' && SERVICE_PURPOSES.has(row.id))
+      fail(`Marketing cannot author a reserved service purpose: ${recorded(row.id)}.`);
+    if (target.type === 'fixed_service' && (!strings(target.purposes, 1) || !unique(target.purposes)
+      || target.purposes.some(purpose => !SERVICE_PURPOSES.has(purpose))))
+      fail(`Choose distinct reserved purposes for the fixed service target ${recorded(row.id)}.`);
+  }
+  return true;
+}
+
+function strategyRow(row, fields = STRATEGY_FIELDS) {
+  const held = row.decision === 'blocked' || row.decision === 'excluded';
+  return [
+    `${held ? 'Do not create a Play. ' : row.kind === 'control' ? 'Control, do not create a Play. ' : ''}${row.id} (${recorded(row.decision)})`,
+    ...fields.map(([field, label]) => `${label}: ${strategyValue(row[field])}`),
+  ].join('\n');
+}
 
 function compilePlaybook(review) {
   const rows = Array.isArray(review?.opportunities) ? review.opportunities : [];
@@ -50,19 +88,18 @@ function compilePlaybook(review) {
     || (scope.boundaries !== undefined && (!Array.isArray(scope.boundaries)
       || scope.boundaries.some(value => typeof value !== 'string'))))
     fail('Use an owner scope object with a text or null requirement and a list of boundary strings.');
+  const separate = perPlay(review);
   const rendered = rows.map(row => {
     const held = row.decision === 'blocked' || row.decision === 'excluded';
-    return { id: row.id, text: [
-      `${held ? 'Do not create a Play. ' : row.kind === 'control' ? 'Control, do not create a Play. ' : ''}${row.id} (${recorded(row.decision)})`,
-      ...STRATEGY_FIELDS.filter(([field]) => !held || HELD_FIELDS.has(field))
-        .map(([field, label]) => `${label}: ${strategyValue(row[field])}`),
-    ].join('\n') };
+    return { id: row.id, text: strategyRow(row, STRATEGY_FIELDS.filter(([field]) =>
+      held ? HELD_FIELDS.has(field) : !separate || SHARED_FIELDS.has(field))) };
   });
   // Shorten repeated labels only. Keep field values and line boundaries intact:
   // URL readers, factual checks and human approval all consume this same text.
   const output = [
     `Product: ${strategyValue(review.product)}`,
     'Follow each decision and its proposed sending owner. Covered means strategy coverage, not implementation or launch. Keep messages assigned to another sender with that sender.',
+    ...(separate ? ['This playbook contains shared factual context. Complete executable rules remain in the reviewed per-Play requests; reconcile each prepared Play against those rules before approval.'] : []),
     ...(scope.requirement === undefined ? [] : [`Owner requirement: ${strategyValue(scope.requirement)}`]),
     ...(scope.boundaries === undefined ? [] : [`Owner boundaries: ${strategyValue(scope.boundaries)}`]),
     ...rendered.map(row => row.text),
@@ -95,9 +132,72 @@ export function renderPlaybook(review) {
   if (!fits) {
     const largest = [...rendered].sort((a, b) => Buffer.byteLength(b.text) - Buffer.byteLength(a.text)).slice(0, 4)
       .map(row => `${JSON.stringify(row.id)} (${row.text.length} characters, ${Buffer.byteLength(row.text)} bytes)`).join('; ');
-    fail(`The generated playbook has ${chars} characters and ${bytes} UTF-8 bytes; limits are 24,000 characters and 32,768 bytes. Compact the recorded strategy and repeat its review. Largest rows: ${largest}.`);
+    const next = review.authoring_mode === 'per_play'
+      ? 'Keep the original facts and rules; this shared playbook cannot be transported.'
+      : 'Compact the recorded strategy and repeat its review.';
+    fail(`The generated playbook has ${chars} characters and ${bytes} UTF-8 bytes; limits are 24,000 characters and 32,768 bytes. ${next} Largest rows: ${largest}.`);
   }
   return output;
+}
+
+// Entire chain: action/review JSON <=512 KiB; API strings use UTF-16 lengths
+// 4000/2000/1000, at most 12 requirements of 1000, intent JSON <=24000 UTF-8
+// bytes. SQL uses code points and <=24576 jsonb bytes; the 576-byte reserve
+// covers JSON formatting for these bounded keys/items. The worker parses the
+// same PlayIntent again. Preserve every chunk through its trim normalization.
+function checkIntent(input) {
+  for (const [name, cap] of [['intent', 4000], ['audience', 2000], ['goal', 1000], ['trigger', 1000]]) {
+    if (input[name] === undefined && name !== 'intent') continue;
+    if (!text(input[name], cap) || [...input[name]].length > cap || input[name].trim() !== input[name])
+      fail(`The complete per-Play ${name} exceeds its ${cap}-character limit or would change during trimming. Keep the original rules; this request cannot be transported.`);
+  }
+  if (!Array.isArray(input.requirements) || input.requirements.length > 12
+    || input.requirements.some(value => !text(value, 1000) || [...value].length > 1000 || value.trim() !== value))
+    fail('The complete per-Play requirements must fit 12 unchanged chunks of at most 1,000 characters. Keep every control and rule.');
+  if (Buffer.byteLength(JSON.stringify(input)) > 24_000)
+    fail('The complete per-Play intent exceeds 24,000 UTF-8 bytes. Keep every control and rule; this request cannot be transported.');
+}
+
+export function compilePlayRequest(review, opportunityId, expectedToken) {
+  if (!perPlay(review)) fail('Per-Play requests require authoring_mode per_play.');
+  const rows = review.opportunities;
+  if (!Array.isArray(rows) || !rows.length || !unique(rows.map(row => row?.id)) || rows.some(row => !text(row?.id, 128)))
+    fail('Record distinct opportunity IDs before compiling a per-Play request.');
+  const row = rows.find(row => row.id === opportunityId);
+  if (!row || row.execution_target.type !== 'marketing')
+    fail('Choose a covered marketing opportunity. Fixed service, held, external and control decisions cannot propose marketing Plays.');
+  const field = name => `${STRATEGY_FIELDS.find(([key]) => key === name)[1]}: ${strategyValue(row[name])}`;
+  const fields = names => names.map(field).join('\n');
+  const controlText = rows.filter(row => row.decision === 'covered' && row.kind === 'control')
+    .map(row => strategyRow(row)).join('\n\n');
+  const groups = [], chunks = [];
+  const lines = controlText ? controlText.split('\n') : [];
+  for (const [index, line] of lines.entries()) {
+    if (line.length > 1000) fail('A complete control line exceeds 1,000 characters. Keep the original rule; this request cannot be transported.');
+    // A newline may separate requirements only when neither resulting edge
+    // would be trimmed. Keep blank/whitespace lines with both their neighbors,
+    // then pack those indivisible groups. This can move a cut earlier than the
+    // 1000-character boundary without changing requirements.join('\n').
+    const previous = lines[index - 1] ?? '';
+    const safeBoundary = previous.length > 0 && line.length > 0
+      && previous.trimEnd() === previous && line.trimStart() === line;
+    if (!groups.length || safeBoundary) groups.push(line);
+    else groups[groups.length - 1] += '\n' + line;
+  }
+  for (const group of groups) {
+    if (!chunks.length || chunks.at(-1).length + 1 + group.length > 1000) chunks.push(group);
+    else chunks[chunks.length - 1] += '\n' + group;
+  }
+  const input = {
+    intent: `${row.id} (${row.decision})\n${fields(['journey_ids', 'kind', 'outcome', 'current_sender', 'proposed_sender',
+      'duplicate_prevention', 'reason', 'implementation', 'dependency', 'next_action'])}`,
+    audience: fields(['actor', 'subject', 'eligibility']),
+    trigger: fields(['trigger', 'timing', 'reentry']),
+    requirements: [...['stops', 'context', 'facts', 'planned_events'].map(field), ...chunks],
+  };
+  checkIntent(input);
+  if (expectedToken !== undefined && !text(expectedToken, 256)) fail('Provide the current catalog token for this exact request.');
+  return { action: 'play.propose', input: { ...(expectedToken === undefined ? {} : { expectedToken }), ...input } };
 }
 
 function markdownText(value) {
@@ -148,7 +248,8 @@ export function renderMarkdown(review) {
     ...keys.map(key => section(label(key), values[key], 2)),
   ].join('\n\n').trimEnd() + '\n';
   if (Buffer.byteLength(output) > LIMIT)
-    fail('The generated Markdown exceeds 512 KiB. Compact the recorded review without dropping its scope, then generate it again.');
+    fail(review?.authoring_mode === 'per_play' ? 'The complete generated Markdown exceeds 512 KiB. Keep every recorded field; this review cannot be transported.'
+      : 'The generated Markdown exceeds 512 KiB. Compact the recorded review without dropping its scope, then generate it again.');
   return output;
 }
 
@@ -261,9 +362,13 @@ export function reviewPacket(review, { plan_input, brand_patch, checklist } = {}
     fail('Provide the complete plan_input and brand_patch objects for independent review.');
   normalizedPlan(plan_input);
   const playbook = renderPlaybook(review);
-  return { strategy_sha256: strategyDigest(review), plan_input, plan_sha256: digest(plan_input),
+  const packet = { strategy_sha256: strategyDigest(review), plan_input, plan_sha256: digest(plan_input),
     brand_patch, brand_patch_sha256: digest(brand_patch), playbook, playbook_sha256: sha256(playbook),
+    ...(perPlay(review) ? { play_requests: review.opportunities.filter(row => row.execution_target.type === 'marketing')
+      .map(row => ({ opportunity_id: row.id, ...compilePlayRequest(review, row.id) })) } : {}),
     ...(checklist === undefined ? {} : { checklist_sha256: checklistDigest(checklist) }) };
+  if (Buffer.byteLength(JSON.stringify(packet) + '\n') > LIMIT) fail('The complete review packet exceeds 512 KiB. No rules or control copies may be omitted.');
+  return packet;
 }
 
 // These checks bind a recorded decision. Session/model strings are declarations,
@@ -362,6 +467,7 @@ export function checkPlanApproval(review, view, input) {
 }
 
 export function checkDiscovery(review) {
+  perPlay(review);
   if (review?.version !== 1 || !text(review.product) || !date(review.captured_at)
     || !Array.isArray(review.sources) || !review.sources.length
     || review.sources.some(source => !text(source?.repo) || !text(source?.revision)))
@@ -402,8 +508,15 @@ export function checkDiscovery(review) {
   return byOpportunity;
 }
 
-export function checkSubmission(review, command) {
+export function checkSubmission(review, command, opportunityId) {
   checkDiscovery(review);
+  if (command?.action === 'play.propose') {
+    if (!text(opportunityId, 128) || !text(command.input?.expectedToken, 256))
+      fail('Provide --opportunity-id and the current catalog token for a reviewed Play proposal.');
+    const { expectedToken, ...semantic } = command.input;
+    if (!isDeepStrictEqual(semantic, compilePlayRequest(review, opportunityId).input))
+      fail('The Play proposal differs from the complete reviewed request. Use the exact compiled input, including every control.');
+  } else if (opportunityId !== undefined) fail('Use --opportunity-id only for play.propose.');
   if (['brand.confirm', 'brand.update'].includes(command?.action)) {
     const expected = Buffer.from(renderPlaybook(review));
     if (typeof command.input?.playbook !== 'string' || !Buffer.from(command.input.playbook).equals(expected))
@@ -462,8 +575,22 @@ function readableTarget(detail, input) {
   return { target, steps };
 }
 
+function checkExecutionApproval(review, opportunities, record, target, input) {
+  if (!perPlay(review)) return;
+  for (const decision of record.opportunities) {
+    const execution = opportunities.get(decision.id).execution_target;
+    const service = SERVICE_PURPOSES.has(input.playId);
+    if (target.play.id !== input.playId || execution.type === 'none'
+      || (execution.type === 'marketing' && (service || ![undefined, 'marketing'].includes(target.play.class)))
+      || (execution.type === 'fixed_service' && (!service || target.play.class !== 'transactional'
+        || !execution.purposes.includes(input.playId))))
+      fail('The exact approval target does not match the reviewed execution target and sending lane.');
+  }
+}
+
 export function bindApproval(artifact, detail, input) {
   const { opportunities, record } = approvalRecord(artifact, input), { target, steps } = readableTarget(detail, input);
+  checkExecutionApproval(artifact.review, opportunities, record, target, input);
   if (detail.summary.token !== input.expectedToken || target.sourceCurrent !== true
     || record.contentHash !== target.contentHash || record.policyHash !== target.policyHash)
     fail('The current approval target no longer matches the recorded review. Refresh the review before approving.');
@@ -485,7 +612,8 @@ export function bindApproval(artifact, detail, input) {
 }
 
 export function replayApproval(artifact, detail, input) {
-  const { record } = approvalRecord(artifact, input), { target } = readableTarget(detail, input);
+  const { opportunities, record } = approvalRecord(artifact, input), { target } = readableTarget(detail, input);
+  checkExecutionApproval(artifact.review, opportunities, record, target, input);
   if (detail.summary.token === input.expectedToken || record.contentHash !== target.contentHash)
     fail('Only an advanced review token can retry the original saved approval request.');
   // Preserve the original evidence exactly. The server replays a matching
@@ -498,8 +626,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const { values, positionals } = parseArgs({ options: {
       'input-file': { type: 'string' }, 'journey-review-file': { type: 'string' },
+      'opportunity-id': { type: 'string' },
       render: { type: 'string' },
     }, allowPositionals: true });
+    if (values['opportunity-id'] !== undefined && (values.render || !values['journey-review-file']))
+      fail('Use --opportunity-id with a play.propose action and --journey-review-file.');
     if (['discovery-task', 'reviewer-task'].includes(values.render)) {
       if (positionals.length || !values['input-file'] || values['journey-review-file'])
         fail('Use --render discovery-task or reviewer-task with only --input-file for the review context.');
@@ -521,11 +652,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (positionals.length || !values['input-file']) fail('Use --input-file with the exact action JSON to calculate its review digest.');
       const { value } = readJson(values['input-file']);
       if (values['journey-review-file']) {
-        if (!['plan.propose', 'brand.confirm', 'brand.update'].includes(value.action))
-          fail('Local submission checks support plan proposals and brand actions. Use manage.mjs for an exact Play approval.');
+        if (!['plan.propose', 'brand.confirm', 'brand.update', 'play.propose'].includes(value.action))
+          fail('Local submission checks support plan proposals, brand actions and Play proposals. Use manage.mjs for an exact Play approval.');
         const { review } = readJourneyReview(values['journey-review-file']);
         checkMarkdown(values['journey-review-file'], review);
-        checkSubmission(review, value);
+        checkSubmission(review, value, values['opportunity-id']);
       }
       process.stdout.write(JSON.stringify({ action: value.action, inputSha256: submissionHash(value),
         ...(values['journey-review-file'] ? { recordedReviewMatches: true } : {}) }) + '\n');
