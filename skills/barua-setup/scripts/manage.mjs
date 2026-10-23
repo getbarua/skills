@@ -12,10 +12,13 @@ const STATUSES = new Set(['awaiting_approval', 'ready', 'running', 'succeeded', 
 const TERMINAL = new Set(['succeeded', 'satisfied', 'failed', 'cancelled', 'stale']);
 const SECRET_FIELD = /secret|password|authorization|^(?:(?:access|refresh|id|auth|api|bearer)[_-]?)?token$|(?:management|integration|runtime|api)[_-]?key$|^key$/i;
 const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => process.env[name]).filter(Boolean);
+// Only a successful Play detail may expose its optimistic review fingerprint.
+// It is not authorization; all other token fields retain credential redaction.
+const reviewSummaries = new WeakSet();
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
-          action, resume, cancel, review, wait, proof, segments, segment, campaigns,
+          action, resume, cancel, review, wait, proof, review-package, segments, segment, campaigns,
           campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
           play-feedback, play-paths
@@ -25,12 +28,15 @@ management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN a
 BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 
 --input-file <file>       JSON body for connect/action/review; otherwise stdin
+--journey-review-file <file>  private source review for plan.propose or brand actions;
+                             exact approval observations for play.approve;
+                             requires its current generated .md sibling
 --idempotency-key <id>    required for connect/action; reuse after response loss
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
                          connection ID for recover-key; segment/campaign ID for its read;
                          job ID for campaign-job/play-job; run ID for play-trace
 --play-id <slug>         exact Play ID for play and play-* inspection commands
---revision-id <uuid>     immutable revision for definition/validate/simulate/paths
+--revision-id <uuid>     immutable revision for play/definition/validate/simulate/paths
 --after <cursor>         next cursor from operations, segment/campaign lists,
                          campaign recipients or Play history pages
 --status <status>        play-admissions filter: blocked, admitted, expired, cancelled
@@ -39,6 +45,8 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
                              secret goes to its stdin; its output is suppressed
 --timeout-ms <n>         total bound including secret storage, 1..300000, default 60000
 --poll-ms <n>            wait polling interval, 100..10000, default 1000
+--output-dir <new-dir>   review-package: private HTML and JSON, never overwritten
+--proof-id <uuid>        review-package: read an existing delivery proof
 
 connect, recover-key and action key.create require a secret destination before sending.
 resume and wait require one before executing a key.create operation. Never
@@ -60,6 +68,11 @@ also binds. Plain proof --id only reads and never waits for stdin.
 Exit: 0 success, 1 helper/transport error, 2 authorization refused,
       3 terminal unsuccessful, 4 awaiting approval, 5 still running at timeout
       or delivery not yet confirmed. A proof exits 0 only when delivered.
+review-package reads current setup and exact example emails without changing
+anything. Optional --input-file supplies version-bound repository evidence.
+Install the whole skill: this command also needs scripts/review-package.mjs.
+Action evidence uses scripts/journey-review.mjs. Only its compact approval
+record is sent; the source inventory stays in your private artifact.
 `;
 
 function fail(code, message) { throw Object.assign(new Error(message), { code }); }
@@ -72,7 +85,7 @@ function redact(value) {
   }
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) =>
-    [redact(name), SECRET_FIELD.test(name) || /^event[_-]?id$/i.test(name) || (value.action === 'person.erase' && name === 'input')
+    [redact(name), (SECRET_FIELD.test(name) && !(name === 'token' && reviewSummaries.has(value))) || /^event[_-]?id$/i.test(name) || (value.action === 'person.erase' && name === 'input')
       ? '[REDACTED]' : redact(item)]));
   return value;
 }
@@ -228,12 +241,13 @@ async function main() {
     id: { type: 'string' }, 'secret-file': { type: 'string' },
     'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' }, status: { type: 'string' },
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
+    'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
-    'segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
+    'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
     'play-catalog','play-job', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
   const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace'].includes(command);
@@ -242,7 +256,8 @@ async function main() {
     fail('invalid_flag', 'Provide --play-id for a Play inspection command.');
   }
   const needsRevision = ['play-definition','play-validate','play-simulate','play-paths'].includes(command);
-  if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined) {
+  if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined
+    && (command !== 'play' || !UUID.test(args['revision-id']))) {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
   }
   const playHistory = ['play-runs','play-trace','play-admissions','play-feedback'].includes(command);
@@ -262,7 +277,9 @@ async function main() {
   }
   const writes = ['connect','action','review','proof','play-simulate'].includes(command);
   if (args['bind-stdin'] && (command !== 'proof' || args['input-file'])) fail('invalid_flag', 'Use --bind-stdin only with proof and without --input-file.');
-  if (!writes && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
+  if (!writes && command !== 'review-package' && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
+  if (command === 'review-package' ? !args['output-dir'] : args['output-dir'] || args['proof-id']) fail('invalid_flag', 'Use --output-dir with review-package.');
+  if (args['proof-id'] && !UUID.test(args['proof-id'])) fail('invalid_flag', 'Use a proof operation UUID with --proof-id.');
   if (!['connect','recover-key','action','resume','wait'].includes(command) && (args['secret-file'] || args['secret-command-file'])) {
     fail('invalid_flag', 'This command does not return a key.');
   }
@@ -280,13 +297,38 @@ async function main() {
   const headers = { authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json',
     ...(owner ? { 'x-workspace-id': process.env.BARUA_WORKSPACE_ID } : {}),
     ...(creates ? { 'idempotency-key': args['idempotency-key'] } : {}) };
-  const body = writes && (command !== 'proof' || args['input-file'] || args['bind-stdin']) ? await inputBody(args['input-file'], deadline) : undefined;
+  const body = (writes && (command !== 'proof' || args['input-file'] || args['bind-stdin'])) || (command === 'review-package' && args['input-file'])
+    ? await inputBody(args['input-file'], deadline) : undefined;
   if (command === 'proof' && body !== undefined && (Object.keys(body).length !== 1 || typeof body.eventId !== 'string' || !body.eventId || body.eventId.length > 577)) {
     fail('invalid_proof', 'Bind a proof with a JSON object containing only eventId.');
   }
   if (command === 'proof' && body?.eventId) credentials.push(body.eventId);
   if (command === 'action' && (typeof body.action !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input))) {
     fail('invalid_action', 'Send {action, input} with an input object.');
+  }
+  let journey, journeyBytes = 0;
+  if (args['journey-review-file']) {
+    if (command !== 'action' || !['plan.propose', 'plan.approve', 'brand.confirm', 'brand.update', 'play.approve'].includes(body.action))
+      fail('invalid_flag', 'Use --journey-review-file with a plan action, brand action or Play approval.');
+    let review;
+    try { review = await import(new URL('./journey-review.mjs', import.meta.url)); }
+    catch (error) {
+      if (error.code === 'ERR_MODULE_NOT_FOUND') fail('missing_module', 'Install the whole barua-setup skill, including scripts/journey-review.mjs.');
+      throw error;
+    }
+    const artifact = review.readJourneyReview(args['journey-review-file'], credentials);
+    review.checkMarkdown(args['journey-review-file'], artifact.review, credentials);
+    // The record binds the source review to its strategy and intended inputs.
+    // Runtime evidence outside this helper establishes who performed it.
+    review.checkIndependentReview(artifact.review, body);
+    if (body.action === 'play.approve') {
+      if (body.input.reconciliation !== undefined) fail('journey_review', 'Use the private artifact or a prepared reconciliation record, without combining them.');
+      review.checkDiscovery(artifact.review);
+      journey = { review, artifact };
+    } else if (body.action === 'plan.approve') {
+      review.checkDiscovery(artifact.review);
+      journey = { review, artifact };
+    } else review.checkSubmission(artifact.review, body);
   }
   let sink;
   const ensureSink = async () => (sink ??= await secretSink(args, deadline));
@@ -296,9 +338,25 @@ async function main() {
       if (Date.now() >= deadline) fail('timeout', 'The time limit ended. Read the operation or retry the same request.');
       try {
         const response = await fetch(new URL(path, base), { method, headers, redirect: 'manual',
-          ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(Math.max(1, Math.min(15000, deadline - Date.now()))) });
+          ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(Math.max(1, Math.min(command === 'review-package' ? 30000 : 15000, deadline - Date.now()))) });
         if (response.status >= 300 && response.status < 400) fail('redirect_refused', 'Barua redirected the request. No credentials were forwarded. Check BARUA_URL.');
-        const text = await response.text();
+        let text;
+        if (command === 'review-package' || journey) {
+          // Bound each reply while streaming, before allocating its JSON object.
+          let bytes = 0; const chunks = [];
+          for await (const chunk of response.body ?? []) {
+            bytes += chunk.length;
+            if (bytes > 2 * 1024 * 1024) fail(journey ? 'journey_review' : 'package_limit', journey
+              ? 'A review response exceeded 2 MiB. Check the saved operation before retrying.'
+              : 'A review response exceeded 2 MiB. No package was saved.');
+            if (journey) {
+              journeyBytes += chunk.length;
+              if (journeyBytes > 16 * 1024 * 1024) fail('journey_review', 'Approval review responses exceeded 16 MiB. Check the saved operation before retrying.');
+            }
+            chunks.push(chunk);
+          }
+          text = Buffer.concat(chunks).toString('utf8');
+        } else text = await response.text();
         let data;
         try { data = JSON.parse(text); } catch { fail('unexpected_response', 'Barua did not return JSON.'); }
         last = { status: response.status, body: data, retry_after_ms: retryDelay(response, attempt) };
@@ -361,6 +419,16 @@ async function main() {
     return { ...result, preparation: job ?? { jobId, state: 'accepted' }, exit: 5, timed_out: true };
   }
   try {
+    if (command === 'review-package') {
+      let collect;
+      try { ({ reviewPackage: collect } = await import(new URL('./review-package.mjs', import.meta.url))); }
+      catch (error) {
+        if (error.code === 'ERR_MODULE_NOT_FOUND') fail('missing_module', 'Install the whole barua-setup skill, including scripts/review-package.mjs.');
+        throw error;
+      }
+      return await collect({ request, redact, base: base.origin, outputDir: args['output-dir'], evidence: body,
+        proofId: args['proof-id'], deadline });
+    }
     if (['connect', 'recover-key'].includes(command) || (command === 'action' && body.action === 'key.create')) await ensureSink();
     // Await completion before finally closes/removes a reserved secret file.
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
@@ -377,7 +445,13 @@ async function main() {
     if (command === 'play-job') return await finish(await request(`${prefix}/plays/jobs/${args.id}`));
     if (playCommands.includes(command)) {
       const path = `${prefix}/plays/${args['play-id']}`;
-      if (command === 'play') return await finish(await request(`${path}/detail`));
+      if (command === 'play') {
+        const response = await request(`${path}/detail${args['revision-id'] ? `?revisionId=${args['revision-id']}` : ''}`);
+        if (response.status >= 200 && response.status < 300 && response.body?.summary?.id === args['play-id']) {
+          reviewSummaries.add(response.body.summary);
+        }
+        return await finish(response);
+      }
       if (command === 'play-validate' || command === 'play-simulate') return await finish(await request(`${path}/${command === 'play-validate' ? 'validate' : 'simulate'}`,
         'POST', { revisionId: args['revision-id'], ...(command === 'play-simulate' ? { input: body } : {}) }));
       const suffix = { 'play-definition': 'definition', 'play-runs': 'runs', 'play-trace': `runs/${args.id}`,
@@ -386,7 +460,44 @@ async function main() {
       return await finish(await request(`${path}/${suffix}${query.size ? `?${query}` : ''}`));
     }
     if (command === 'review') return await finish(await request(`/api/agent-connections/operations/${args.id}/review`, 'POST', body), true);
-    if (command === 'action') return await finish(await request(`${prefix}/actions`, 'POST', body), true);
+    if (command === 'action') {
+      if (journey && body.action === 'plan.approve') {
+        const plan = await request(`${prefix}/plan`);
+        if (plan.status < 200 || plan.status >= 300) return await finish(plan);
+        // Plan versions are immutable. If superseded after this read, the
+        // existing approval RPC refuses that version under its row lock.
+        journey.review.checkPlanApproval(journey.artifact.review, plan.body, body.input);
+      } else if (journey) {
+        const { playId, revisionId } = body.input;
+        if (!/^[a-z][a-z0-9_]{0,63}$/.test(playId ?? '') || !UUID.test(revisionId ?? ''))
+          fail('journey_review', 'Provide the exact Play ID and revision before reading its approval target.');
+        const detail = await request(`${prefix}/plays/${playId}/detail?revisionId=${revisionId}`);
+        if (detail.status < 200 || detail.status >= 300) return await finish(detail);
+        const replay = typeof detail.body?.summary?.token === 'string' && detail.body.summary.token !== body.input.expectedToken;
+        const reconciliation = replay
+          ? journey.review.replayApproval(journey.artifact, detail.body, body.input)
+          : journey.review.bindApproval(journey.artifact, detail.body, body.input);
+        body.input = { ...body.input, reconciliation };
+        if (Buffer.byteLength(JSON.stringify(body)) > 524288) fail('input_too_large', 'The approval and its review evidence must fit within 512 KiB.');
+        // One exact detail plus S×L previews (L <= 20), then the action.
+        // Each request has at most four transport attempts. All share the
+        // original deadline, 2 MiB per reply and 16 MiB total streamed bytes
+        // across retries. There is no separate step-count ceiling.
+        // An advanced token can only resend the original receipt for server
+        // idempotency replay. A new stale-token request cannot grant approval.
+        // Matching-token render failures never enter that recovery path.
+        for (const preview of replay ? [] : reconciliation.previews) for (const language of preview.languages) {
+          const response = await request(`${prefix}/plays/${playId}/preview`, 'POST',
+            { example: true, revisionId, stepId: preview.stepId, language });
+          if (response.status < 200 || response.status >= 300) return await finish(response);
+          if (typeof response.body?.subject !== 'string' || !response.body.subject.trim()
+            || typeof response.body?.bodyHtml !== 'string' || !response.body.bodyHtml.trim()
+            || !Array.isArray(response.body.lintIssues) || response.body.lintIssues.length)
+            fail('journey_review', 'An exact email preview is unavailable or failed its checks. Review it before approving.');
+        }
+      }
+      return await finish(await request(`${prefix}/actions`, 'POST', body), true);
+    }
     if (command === 'proof') {
       const proofResult = async response => {
         const result = await finish(response);
@@ -466,7 +577,7 @@ async function main() {
   } finally { sink?.close(); }
 }
 
-const result = await main().catch(error => ({ exit: 1, error: { code: error.code ?? 'helper_error', message: error.message ?? 'The helper could not complete the request.' } }));
+const result = await main().catch(error => ({ exit: error.exit === 2 ? 2 : 1, error: { code: error.code ?? 'helper_error', message: error.message ?? 'The helper could not complete the request.' } }));
 if (result.help) process.stdout.write(HELP);
 else process.stdout.write(`${JSON.stringify(redact({ ok: result.exit === 0, ...result }), null, 2)}\n`);
 process.exitCode = result.exit;

@@ -402,7 +402,16 @@ A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume
 
 ## Setup handoffs
 
-`GET /api/integrations/v1/setup` returns `{complete, needs_human, optional, done}`. Each entry is a `needs_human` object, `{step, url, why, resume}`. For event-only access, give the owner `url` and `why`, then follow `resume`. An authorized management connection may complete these steps within its grant. The workspace owner sees the same steps on the Setup screen, worked out from the same facts. The steps, in the order they're listed:
+`GET /api/integrations/v1/setup` returns `{complete, needs_human, optional, upcoming, done}`. Each handoff entry is `{step, url, why, resume}`. For event-only access, give the owner `url` and `why`, then follow `resume`. An authorized management connection may complete these steps within its grant. The workspace owner sees the same steps on the Setup screen, worked out from the same facts.
+
+`upcoming` contains `approve_templates` or `enable_play_emails` while that step
+waits on preparation or another prerequisite. These links keep the next review
+visible if authoring finishes during an agent's final reply. They are not ready
+actions and grant no authority. Recheck setup before acting. Ready steps stay
+in `needs_human`; completed steps stay in `done`. Older servers may omit
+`upcoming`; the helper preserves their pending email steps using current
+workspace links. A supplied array, even when empty, takes precedence over that
+fallback. The current steps, in the order they're listed:
 
 <!-- docs-check:needs-human -->
 | Step | Pending while |
@@ -412,7 +421,7 @@ A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume
 | `approve_tracking_plan` | A plan proposal waits for the owner. |
 | `forward_email` | Optional, and listed under `optional`. Nobody has forwarded one of your emails yet. Barua reuses its design; without one, Barua uses its own. |
 | `confirm_brand` | The owner hasn't confirmed a brand yet. Once confirmed it stays done, and a later proposal changes nothing. |
-| `approve_templates` | The brand is confirmed and some play's email waits for the owner's review, or Barua couldn't write a play's emails and nothing is retrying them: the owner sees why under Plays, and an edit to the brand or playbook tries again. While Barua is still writing them, nothing is listed. |
+| `approve_templates` | The brand is confirmed and some play's email waits for the owner's review, or Barua couldn't write a play's emails and nothing is retrying them: the owner sees why under Plays, and an edit to the brand or playbook tries again. While Barua is still writing them, this stays out of `needs_human`. |
 | `enable_play_emails` | Every template is approved, but play emails aren't on. Approving templates doesn't turn them on. The owner can use Setup, or an authorized management connection can request `sending.enable`. Do this before the live deploy, because an event from before play emails are first on never starts a play. |
 | `enable_live_events` | Both keys exist and the test events have passed, but live events aren't switched on for the workspace. An authorized management connection can request `intake.enable` once setup is ready. The owner can grant access and review a request in Settings, Agents. |
 | `deploy_live_key` | Live events are on and the test events have passed, but no live `signed_up` has applied through an active live key. Live means sent in `live` mode and received within 72 hours of its `occurred_at`. A backfill never counts. While play emails are off it isn't listed, so the account that proves the deploy can also start a play. |
@@ -459,3 +468,38 @@ The job retries each call until it answers 200 with `"erased": true`, unless the
 Log each failed attempt with the job's id and the answer's `code`, never the email or the key.
 
 Never make the erase a call inside the deletion request, awaited or under `waitUntil`. A 409 asks for two minutes and a 503 can last hours, longer than any request waits, and once the account is deleted nothing else in your product holds the id and the email. A call that fails there leaves the person's data in Barua for good. If your product has no job queue, add a small outbox table for erase jobs, written in the delete's transaction, and a scheduled job that runs the ones that are due and records each answer.
+
+## Finish an event-only run
+
+Do this immediately before the final chat reply. Authoring and owner decisions
+can change setup while you write the artifact or check the repo; an earlier
+snapshot can omit a step that is now ready.
+
+1. Read `GET /api/integrations/v1/plan`, then `GET /api/integrations/v1/setup`
+   again. Derive the plan line from `plan_version` (approved) and
+   `proposal.version` when a proposal exists; keep both versions distinct.
+   Record the setup response with
+   `handoffs.mjs --record <receipt-file>`, then pass the same response through
+   stdin to `handoffs.mjs --report <receipt-file>`.
+2. Use that output to finish the handoff block in the [Report format](/skills/barua-setup/SKILL.md#report-format).
+   Include the event sources and plan version, plus every `needs_server_call`
+   line from repo discovery. Keep the helper's exact step identifiers and URLs,
+   including `completed_owner_step` receipts. Refresh the artifact's handoff
+   with this same block if its state has changed.
+   Keep `upcoming_owner_step` lines too. They name conditional review or
+   sending steps that may become ready while you write the reply. They are
+   not ready in the captured response and grant no permission to act.
+3. Put the full handoff block in the **final chat reply** as a text code block,
+   followed by clickable private review-artifact and journey Markdown/JSON links. Keep this block in
+   chat even when the linked artifact also contains it. State the verified
+   result and remaining work briefly around the block; preserve its exact lines
+   when shortening the reply.
+
+If the fresh setup read fails, retain the last verified block and name its age
+and the failed read. Do not claim the current owner steps were verified.
+An older server may omit `upcoming`; keep the returned steps and say that
+later review steps were not supplied. Do not invent their status or URLs.
+
+Before the owner makes the new account that proves the deploy, read `GET /api/integrations/v1/setup`. It lists `deploy_live_key` only once play emails are on, even while verify's live verdict names it. While it lists `enable_play_emails`, ask the owner to turn play emails on first: that account would still prove the deploy, but an event from before play emails are first on never starts a play.
+
+Once the live key is deployed, run `node <skill dir>/scripts/verify.mjs --live`. Your test key reads the live verdict too. It exits 4 until live events are on and the deploy is proven: the `deploy_live_key` step clears only when a `signed_up` sent in live mode applies through the live key within 72 hours of its `occurred_at`, which is what a new account made through the product sends. History sent with `"mode": "backfill"` never clears it. Exit 0 means Barua sees the product's events live.

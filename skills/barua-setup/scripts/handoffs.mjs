@@ -1,5 +1,7 @@
 // Local receipts preserve owner links and source gaps through later setup
 // reads. Printing a receipt does not establish that the owner saw it.
+// Conditional upcoming steps come only from the current response. They are
+// forecasts, not observed owner requests, so they are never journalled.
 // Create the private journal with mktemp first; this helper never creates it.
 // node handoffs.mjs --record <journal> < response.json
 // node handoffs.mjs --report <journal> < latest-setup.json
@@ -45,15 +47,16 @@ function render(entries, done = new Set()) {
   if (unique.size > MAX_ENTRIES) refuse('Too many handoff entries.');
   return [...unique.values()].map(value => value.kind === 'needs_server_call'
     ? `needs_server_call: ${value.source} ${value.action} Suggested endpoint: ${value.endpoint}\n`
-    : `${done.has(value.step) ? 'completed_owner_step' : value.kind}: ${value.step} ${value.url}\n  why: ${value.why}\n`).join('');
+    : `${done.has(value.step) ? 'completed_owner_step' : value.kind}: ${value.step} ${value.url}\n  why: ${value.why}\n`
+      + (value.kind === 'upcoming_owner_step' ? '  state: Not ready in this snapshot. Recheck setup before acting.\n' : '')).join('');
 }
 
-// GET /setup lists only actions ready now. While Barua is writing templates,
+// Older GET /setup responses list only actions ready now. During authoring,
 // neither review nor enablement appears there, even though both remain ahead.
 // Preserve these future steps explicitly instead of claiming setup has only
 // the currently visible work left. Derive links from this response's workspace,
 // never an older receipt, and never mark an unfinished action completed.
-function upcoming(entries, done) {
+function pendingOwnerSteps(entries, done) {
   if (!done.has('confirm_brand')) return [];
   const ready = new Set(entries.map(value => value.step));
   const pending = [
@@ -87,6 +90,9 @@ try {
     chunks.push(chunk);
   }
   const body = json(Buffer.concat(chunks).toString('utf8')), current = receipts(body);
+  const upcoming = body.upcoming === undefined ? [] : body.upcoming;
+  if (!Array.isArray(upcoming) || current.length + upcoming.length > MAX_ENTRIES) refuse('Too many or invalid handoff entries.');
+  const future = upcoming.map(value => entry(value, 'upcoming_owner_step'));
   const done = mode === '--report' ? body.done : [];
   if (!Array.isArray(done) || done.length > MAX_ENTRIES || done.some(value => !text(value, 80))
     || (mode === '--report' && !Array.isArray(body.needs_human))) refuse('Report requires the latest setup response, including needs_human and done.');
@@ -108,8 +114,15 @@ try {
     if (!['needs_human', 'optional', 'needs_server_call'].includes(value?.kind)) refuse('Journal has an invalid receipt.');
     return entry(value, value.kind);
   });
+  // Current ready/optional entries win over forecasts. A completed forecast
+  // alone is not a receipt that the owner was asked; only observed receipts
+  // can become completed_owner_step. Older servers omit upcoming: retain
+  // their future email handoff using only this response's workspace links.
   const completed = new Set(done);
-  const output = render(mode === '--record' ? current : [...previous, ...current, ...upcoming(current, completed)], completed);
+  const forecasts = mode === '--report' && body.upcoming === undefined
+    ? pendingOwnerSteps(current, completed) : future.filter(value => !completed.has(value.step));
+  const output = render([...(mode === '--report' ? previous : []),
+    ...forecasts, ...current], completed);
   if (mode === '--record' && current.length) {
     const append = Buffer.from(current.map(value => JSON.stringify(value) + '\n').join(''));
     if (previous.length + current.length > MAX_ENTRIES || fstatSync(fd).size + append.length > MAX_FILE) refuse('Journal limit reached; keep it and report its saved handoffs.');

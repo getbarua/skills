@@ -10,6 +10,6 @@
 - `event_id` is the event's name and the source row id joined by a colon, such as `created:4812`, one per occurrence for repeatable events. `occurred_at` is the source row's timestamp, never the time you send.
 - Send history with `"mode": "backfill"`. Only events the product sends as they happen are live.
 - Account deletion reads the user's email before the delete and, in the same transaction, writes an erase job holding that email and the user id. The erase job calls `POST /api/integrations/v1/people/erase` with `external_id`, then with `email`, and retries each until it answers 200 with `"erased": true`. Any other answer, another 2xx included, leaves that call unfinished and the job in place. Never erase from the request alone.
-- Change events with `POST /api/integrations/v1/plan`, sending the full plan every time: an approved event you leave out is removed. Never emit an event the plan lacks.
+- Before changing events, refresh and check the journey map using the skill's `references/journey-review.md`. Change events with `POST /api/integrations/v1/plan`, sending the full plan every time: an approved event you leave out is removed. Never emit an event the plan lacks.
 - With `BARUA_MANAGEMENT_KEY`, read the skill's `references/management.md` and use management actions for plan/brand changes, approval and launch under the owner's grant. Keep test validation separate; fresh delivery needs its own proof. Never print credentials.
 <!-- barua:end -->

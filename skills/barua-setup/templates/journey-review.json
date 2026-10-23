@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "product": "",
+  "captured_at": null,
+  "sources": [],
+  "owner_scope": {
+    "requirement": null,
+    "boundaries": []
+  },
+  "source_inventory": [],
+  "discovery_review": {
+    "status": "unreviewed",
+    "checked_at": null,
+    "findings": []
+  },
+  "journeys": [],
+  "opportunities": [],
+  "coverage_review": {
+    "status": "unreviewed",
+    "checked_at": null,
+    "findings": []
+  },
+  "independent_review": null,
+  "workspace": {
+    "id": null,
+    "plan_version": null
+  },
+  "submission_reviews": [],
+  "reconciliation": [],
+  "approval_observations": []
+}

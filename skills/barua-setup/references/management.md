@@ -125,6 +125,7 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `recover-key --id <connection-id>` | Original granting owner's credentials and a secret destination; saves the same active management key without changing policy or pending operations |
 | `connections` | Owner credentials; lists connections |
 | `capabilities`, `setup`, `operations` | Management credentials; read-only discovery and operation listing |
+| `review-package --output-dir <new private directory>` | Reads setup, the full event plan, exact play revisions and synthetic previews; writes `index.html` and `review.json`. Optional `--input-file` adds source evidence; optional `--proof-id` reads an existing proof. See [review-package.md](review-package.md). |
 | `segment-fields` | Approved `segmentFields` for audience rules and `mergeFields` for personalization |
 | `segments`, `campaigns` | Saved segment or campaign summaries; use `--after` for another page |
 | `segment --id <segment-id>`, `campaign --id <campaign-id>` | Current detail, versions and prepared previews |
@@ -247,6 +248,10 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `POST /operations/:id/resume`, `/operations/:id/cancel` | Continue or cancel the same operation |
 | `GET /proofs/:id`, `POST /proofs/:id/bind` | Read proof or bind `{eventId}` in the request body |
 
+`GET /plan` includes canonical core event definitions alongside proposed and
+approved custom plans. The review-package helper requires those definitions
+so it cannot present a custom-only plan as complete.
+
 Use the literal play routes above; encoded play-route aliases are refused. Play
 detail also remains available at `/plays/:id` for compatibility, except IDs
 `mode`, `map`, `results`, `profiles` and `catalog`, whose names are reserved for discovery routes.
@@ -279,6 +284,10 @@ send `play.propose` with that token and a plain-language `intent`. Optional
 precise. Barua writes the structure and every email. Raw graphs and email
 templates are not accepted as proposal input. The complete intent content
 must fit within 24,000 UTF-8 bytes.
+
+`play.propose` creates a new distinct Play. To change an existing Play, use
+`play.request-changes` with its current token and feedback. Creating another
+Play does not replace or stop the previously approved one.
 
 Use the returned operation ID with `wait`, then read its ready revision.
 `play-definition` returns the complete definition, exact content hash and
@@ -319,6 +328,35 @@ Approve the exact revision and languages with the current review token. Approval
 does not enable sending. Existing journeys stay on their approved revision when
 you approve an update.
 
+New delegated `play.approve` inputs also require `reconciliation`. Run the
+action helper with `--journey-review-file <private journey-review.json>`.
+Follow [journey-review.md](journey-review.md) to record the reviewed canonical
+approval target and complete synthetic preview coverage first. The helper
+reads that artifact and current server state, then attaches the bounded record.
+It does not upload your source files or private Markdown.
+
+For a selected historical or additional-language revision, inspect
+`approvalTarget.play` with `selected.flow`. `approvalTarget.policyHash` names
+the policy canonical approval will use; `selected.play` may describe a
+different historical approval. `manage.mjs play --play-id <id> --revision-id
+<uuid>` reads the exact version. Never derive a policy hash locally.
+
+The record carries `schemaVersion: "barua-play-reconciliation@1"`,
+`artifactSha256`, `contentHash`, `policyHash`, opportunity IDs with specific
+`checks`, and a `previews` list of step IDs and reviewed languages. It is stored
+with the operation and bound by its existing input hash. The server checks the
+current target and complete requested preview matrix at submission and again
+when reviewed or resumed. It cannot certify that an agent understood the source
+or that a person read the report. Full delegation still runs without a pause.
+
+Reconciliation refusals include `reconciliation_required`,
+`reconciliation_invalid` and `reconciliation_changed`; malformed action input
+can fail the request schema first. Read the current target,
+review it and submit a new request with updated evidence. Do not change the
+input under an existing request ID. Exact terminal retries and already
+satisfied owner actions can still recover without a new record; a legacy
+pending operation cannot create a new approval without one.
+
 `play.entries.stop` closes new enrollments while current journeys continue.
 `play.pause` pauses the Play, retaining saved progress. Both use the current
 Play token. Resuming entries or the Play follows the connection's Play checkpoint.
@@ -333,7 +371,8 @@ superseded work. Accepted guidance stays with that Play; rejected proposals
 do not become standing writing instructions.
 
 Operation pages return up to 20 rows and a `next` cursor. Pass it as `after`
-until `next` is null. List summaries omit `input`, `result` and `authority`;
+until `next` is null. Use `status=awaiting_approval` to collect pending reviews
+without walking completed history. List summaries omit `input`, `result` and `authority`;
 read the operation by ID when those details are needed. Owner review lists use
 the same summary shape, with full details at their context endpoint.
 Each complete operation page is limited to 64 KiB; summary error codes may be
@@ -515,15 +554,46 @@ connection or owner-approved renewal, not a recovery retry loop.
 
 ## Complete setup and later changes
 
-1. Read capabilities and setup. Propose the full event plan, including empty
-   arrays when appropriate. Approve its exact version or retain the pending
+Follow the relevant setup steps, then always complete step 7 before handing
+back to the owner. This includes a fresh process resuming an approved operation,
+a partial task and a run waiting at a checkpoint. Full delegation uses the same
+artifacts and continues without adding a human pause. The package reads and
+renders; approval and request-changes actions stay in the existing workspace
+review flow under the current grant.
+
+1. Read capabilities, setup and the named product repos. Complete the
+   [journey review](journey-review.md) and save its private Markdown/JSON
+   artifacts before proposing or approving events. Review the full experience,
+   including lifecycle, transactional and micro-play opportunities, against
+   the source. Inventory supported variants, recovery transitions and
+   time-dependent conditions before choosing messages. Derive the full event
+   plan and playbook from the reviewed map. Obtain the required independent
+   review through native agent delegation before submitting: the reviewer
+   derives its checklist from product evidence first, then compares the full
+   strategy and exact intended inputs. Record the result and content bindings
+   as described in the journey reference. Self-review is insufficient; if native
+   review is unavailable, hold those submissions without adding a human
+   checkpoint. Review the exact submission's claims, generate the matching
+   Markdown view and pass `--journey-review-file` to plan proposal, plan approval
+   and brand actions. The helper checks the recorded result and matching inputs;
+   it does not prove independent execution or semantic truth. Follow the
+   rendering order in the journey reference.
+   Propose the full plan, including empty arrays when appropriate. Generate the [review package](review-package.md)
+   for the proposal before requesting approval or approving it under delegation.
+   Approve its exact version or retain the pending
    operation for owner review. Write emitters at the actual server commit points
    and validate through the real product flow with the test key.
-2. Read brand and its version. Derive the playbook from product facts. Initial
+2. Read brand and its version. Generate the playbook from the reviewed
+   opportunity fields with `journey-review.mjs --render playbook`; keep its
+   exact text in the action input. The helper refuses a separate condensed
+   rewrite. Initial
    `brand.confirm` includes the exact proposal hash and seen values; later
    `brand.update` changes the existing brand. Optional `template.import` accepts
    a workspace-owned forwarded email and checked layout. Preserve unrelated
-   configuration when supplementing an existing workspace.
+   configuration when supplementing an existing workspace. Material changes to
+   the intended strategy or brand patch require another independent comparison.
+   Refreshing a version or checkpoint field requires a current exact action
+   review, without repeating an unchanged semantic review.
 3. Provision a sending domain and install the returned records with the already
    authorized DNS tool. Call `domain.verify` explicitly and read the result.
    Report absent external permissions precisely; Barua does not store DNS or
@@ -543,8 +613,20 @@ connection or owner-approved renewal, not a recovery retry loop.
    Mailgun activation is no longer available. If a legacy setup request returns
    `provider_retired`, read the SES state and submit a new request.
    Accepted or uncertain attempts are never resent through another provider.
-4. Read each play's current revision and token. Inspect renders before approving
-   selected languages. Request changes or retry authoring when needed. A later
+4. Inspect the automatic proposals produced from the brand playbook. When
+   branching proposals are enabled, use `play.propose` for a new Play; use
+   `play.request-changes` for an existing Play. Wait for the exact prepared
+   revision. Read each play's current
+   revision and token. Reconcile its rules and renders with the journey before
+   approving selected languages; record exact revision IDs, content hashes and
+   proposed/approved roles, current review tokens and findings in the journey
+   JSON. Inspect each role's policy even if it shares an email revision. Read
+   the canonical `approvalTarget`, record its observation and preview matrix,
+   and pass `--journey-review-file` to `play.approve`; new delegated approvals
+   require the matching evidence.
+   Missing drafts, mismatched behavior and
+   unimplemented prerequisites remain explicit. Request changes or retry
+   authoring when permitted, and verify the result before further approval. A later
    update follows the same review policy. Existing approved content can continue
    while a replacement waits; pausing is explicit.
    An existing workspace in email review can use `review.enable-plays` with
@@ -564,6 +646,41 @@ connection or owner-approved renewal, not a recovery retry loop.
    establishes delivery. `provider_accepted` is still waiting for the provider's
    delivery report. A held event reports the stage and reason code; do not fake consent
    or bypass suppression to make it pass.
+7. **Finish every run with a current review package.** Follow
+   [Finish and hand off](#finish-and-hand-off), including when only some of the
+   steps above apply. An earlier process's export does not describe changes
+   made during this run.
+
+## Finish and hand off
+
+After the last setup change or resumed operation, run `manage.mjs review-package`
+into a new private output directory. Do this before returning at a checkpoint
+too, so the report contains its exact pending operation. Refresh before launch
+and again after any launch action or delivery check. A successful setup action
+does not produce or refresh this report automatically.
+
+Read the command's returned `artifacts.html` and `artifacts.json`. Inspect the
+snapshot's plan status, intake and sending state, pending reviews and any proof
+status before describing the result. Use the current report even if a previous
+process's files are unavailable. Do not reconstruct old paths or reuse an export
+from before the operation you just resumed.
+
+End with clickable Markdown links using those returned paths:
+`[Review setup](<absolute HTML path>)` and
+`[Matching snapshot](<absolute JSON path>)`. Replace the placeholders with the
+actual paths; code-formatted filenames alone are not links. Include the links
+in an implementation PR when one exists, using an authorized private location.
+Link the current private `journey-review.md` and `journey-review.json` too.
+Refresh their affected rows and exact-revision reconciliation after changes;
+an older plan approval is not evidence of reviewed journey coverage.
+Keep files needed by the handoff available. State strategy coverage separately
+from operational readiness, what remains open and the next permitted action
+in plain factual language.
+
+If collection fails or access is unavailable, state the specific failure and
+which sections could not be inspected. Do not claim a fresh report exists or
+silently fall back to a stale one. The report is a dated snapshot, not approval
+authority or delivery proof.
 
 ## Errors and recovery
 

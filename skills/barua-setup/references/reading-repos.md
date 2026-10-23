@@ -1,8 +1,37 @@
 # Reading the product's repos
 
-Read every repo the owner names. A monorepo counts once, with several roles. The goal is one server line per fact: the place where it becomes true in the database. Everything you send comes from there.
+Read every repo the owner names. A monorepo counts once, with several roles. First understand the complete customer journey and its outcomes, then locate the server commit point for each supporting fact. Existing emitters are evidence of implementation, not a boundary on the intended journey.
 
-Nothing you read leaves the machine. Barua gets events, the tracking plan, brand tokens and the `file:line` each token came from.
+Source files and the full discovery inventory stay on the machine. Barua gets
+the declared events and configuration you submit, including the source-backed
+playbook. Management Play approvals also send the artifact digest with compact
+review findings and the exact policy and preview references.
+
+## Journey discovery before event selection
+
+Follow [journey-review.md](journey-review.md) before proposing or approving a plan.
+Trace routes through server handlers, persisted state, workers and existing
+emails. Include alternate creation modes, incomplete actions, failures,
+recovery, payment states, fulfilment, returning users and account controls
+where the product supports them. Look beyond the successful signup-to-purchase
+path and beyond files that already mention Barua.
+
+Make two recorded passes. First inventory the source-owned entities and their
+variants. Follow state changes through failure and recovery, then record time
+conditions and current senders. Keep that list separate from the messages you
+want to propose. Use the `source_inventory` fields in the journey reference.
+Before selecting events, complete its [fact-to-decision checks](journey-review.md#trace-facts-through-every-decision)
+for shared consumers, preexisting state, action prerequisites and time without callbacks.
+
+Next map every material source row to an assessed opportunity or control
+decision. Check the exact plan and playbook you will submit against those
+facts. Distinguish observations from proposals; leave unknown promises out of
+the submission. A retry endpoint does not establish that retry is free or
+available to the customer. Follow its authorization and charge behavior.
+
+Record sending ownership and duplicate prevention when another system keeps
+sending a message. Its event may still stop a different Play. Missing emitters
+remain implementation work; unresolved product facts remain dependencies.
 
 ## Frontend
 
