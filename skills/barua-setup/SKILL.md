@@ -8,71 +8,49 @@ metadata:
 
 # Barua setup
 
-Barua sends lifecycle email from site activity and events your product's server reports, and one-off campaigns to saved segments. Enabled pixel observations can inform and trigger marketing plays for identified people under the existing marketing basis. Server events remain authoritative for consent and transactional email. You can complete setup and ongoing changes through its management API within the owner's grant. The owner chooses full delegation or review of the plan, brand, plays, launch or campaign sends. Use already authorized tools to configure DNS and deploy. Put live keys in the host's secret store. If you have only a test integration key, use the legacy event-only path below and report the owner steps.
+Use Barua for lifecycle email and one-off campaigns. Follow the access path below,
+then the required journey review before selecting events or plays.
+Read this whole file and each required branch reference. If a tool truncates
+output, read the missing ranges until complete. A heading or clipped-line preview
+does not replace the full instructions.
 
 ## Choose your access path
 
-- With `BARUA_MANAGEMENT_KEY`, read `references/management.md` first. Run `scripts/manage.mjs capabilities` and `setup`. The returned action schemas and permission policy are authoritative. Approve and launch through the API when permitted. A review checkpoint returns a durable `awaiting_approval` operation: report its ID and resume that same operation after review. Complete [Finish and hand off](references/management.md#finish-and-hand-off) before every final reply, including after resuming an operation in a fresh process. Do not substitute browser clicks for a missing permission.
-- For a new Play, describe the intended behavior, read `play-catalog` and use `play.propose` when branching is enabled. Change an existing Play through `play.request-changes` with its current token. Barua generates its structure and email copy. `wait` for the exact prepared revision before simulating or approving it. An accepted operation is not a ready Play. Keep run inspection within the separate `people:read` grant.
-- With only `BARUA_API_KEY`, follow the event-only steps below. `scripts/verify.mjs` keeps its existing test-key contract. It does not use a management key and cannot establish fresh provider delivery.
+- With `BARUA_MANAGEMENT_KEY`, read [management.md](references/management.md)
+  before any action. Run `scripts/manage.mjs capabilities` and `setup`, then
+  follow [Complete setup and later changes](references/management.md#complete-setup-and-later-changes).
+  The returned grant and review policy determine what you can do. Complete
+  [Finish and hand off](references/management.md#finish-and-hand-off) before
+  every final reply, including a resumed operation or partial run.
+- With only `BARUA_API_KEY`, follow the event-only steps below using a test key.
+  `scripts/verify.mjs` validates events; it cannot establish provider delivery.
 
-Before any credential handoff, name the key and where it belongs. The management key (`mk_…`, `BARUA_MANAGEMENT_KEY`) has no test or production mode. It acts on the real workspace under the owner's permissions and review policy. Store it in the agent's secret store and load it into the helper's process environment; `manage.mjs` does not load env files automatically. Full delegation can include live launch when granted and ready. Establish a secure destination and permitted transfer method before creating a connection. If browser transfer is unavailable, arrange owner-assisted saving and keep the key panel open until saving is confirmed. Verify helper access with `capabilities`; **Access granted** (or **Connected** on older screens) alone is not verified access. Continue independent repo work while the handoff is pending.
+Before creating or handing off credentials, follow
+[Access and discovery](references/management.md#access-and-discovery).
+The management key (`mk_`) has no test or production mode. Event keys (`ik_`)
+have recorded test and live modes. For a missing management key, follow
+[Recover a lost management key](references/management.md#recover-a-lost-management-key);
+preserve the existing connection.
 
-For a lost management key, read the recovery section in `references/management.md`. The granting owner can use **Save key again** in Settings → Agents, or an agent with that owner's authorized credentials can run `recover-key --id <connection-id>` into a secure destination. This recovers the same active connection without changing its policy or pending work. Verify the deployed recovery path exists before directing the owner there. If unavailable, explain the missing capability and arrange a secure replacement with the owner; never keep asking for a key that is no longer visible. Do not duplicate or revoke an existing connection without authorization.
-
-Full delegation removes checkpoints within the grant; it does not establish launch permission. Read the actual permissions before saying the agent can enable sending. A missing recovery button alone does not prove an older deployment: check the original owner and active connection, then current terms, before diagnosing missing support or proposing replacement access.
-
-Event keys (`ik_…`, `BARUA_API_KEY`) have separate test and live modes. Both use the same prefix; read the recorded mode. The test key goes in development or CI and validates events without creating people or sending email. The live key goes in production hosting secrets for real product events. Create test and live keys through `key.create` only when `setup:write` permits it. The helper transfers newly issued keys directly to an authorized secret command or a new private ignored file; never put a secret in a prompt, command argument, log or commit. Revoking a management connection leaves deployed event keys working. Rotate those explicitly by creating the replacement, installing it, proving fresh traffic, and then revoking the old key. Each mode has two active slots; never revoke a working key just to make space without an approved rotation path.
-
-History imports require an explicit grant. Customer reads and erasure each need their own permission. Marketing-lawful-basis assertions require `marketing:attest` and an explicit factual statement from the owner or an agent authorized to supply that fact. Permission to operate the workspace does not establish a lawful basis. A recipient's recorded refusal still wins.
-
-For both access paths, complete `references/journey-review.md` before proposing or approving events. Before drafting, generate its canonical `--render discovery-task` and run a fresh native source-only agent. Reuse the returned observed facts for your inventory; map every customer-outcome obligation and actual action prerequisite into an assessed decision. Save private `journey-review.json` and generate its `.md` sibling with `scripts/journey-review.mjs --render markdown`. Inventory entities and variants, transitions including recovery, time conditions and existing senders. Complete the [fact-to-decision checks](references/journey-review.md#trace-facts-through-every-decision) before selecting events. Distinguish observed facts, proposed choices and unknowns. Cover lifecycle and transactional messages, unfinished tasks and failures. A named owner message is an inclusion requirement unless they limit scope. Give each opportunity concrete rules, context, sending ownership and a covered/excluded/blocked decision with a source-backed reason and implementation status. Missing emitters are implementation gaps; existing emails determine ownership and duplicate prevention. Measure every row with `--render size` during drafting; preserve material conditions while removing repeated explanation in one planned pass. Unassessed situations leave coverage incomplete; explicit dependencies hold affected actions. Update both artifacts when plans and revisions change, including held drafts and incomplete runs.
-
-Before any onboarding plan proposal, plan approval or brand submission, obtain a fresh final review through native delegation, separate from the early discovery agent. Follow `references/journey-review.md` to prepare the packet and generate `journey-review.mjs --render reviewer-task`. Use `BARUA_SETUP_REVIEW_CONTEXT_FILE` unchanged when supplied. Pass both canonical prompts unchanged, with their configured effort and foreground controls. Do not pass author conclusions or early advice into the final reviewer; it independently derives source expectations before reading the strategy. Corrections use another fresh final reviewer, preserving earlier failures. Record exact configured identity strings and retain actual runtime verification as the reference describes. Self-review cannot replace this step. If native review is unavailable, hold affected submissions and report the limit while continuing permitted independent work. Do not add a human checkpoint, request another model account or start a nested CLI/API call. The helper binds recorded review inputs; retained harness evidence establishes actual delegation. Neither certifies semantic truth by itself. Reserve time for the permitted plan, brand and exact-draft review after strategy review passes.
-
-For delegated setup, propose the full plan even when it is `{"events":[],"not_emitted":[]}`. Generate the playbook with `journey-review.mjs --render playbook` from the reviewed artifact; use its exact bytes, then record the action digest and claim review and regenerate Markdown as the reference describes. Source every material product claim; do not invent positioning or consent. Compact oversized source fields without dropping material rules, then refresh the independent review. Use `brand.confirm` for the initial brand, and `brand.update` for a requested later change. Use `--journey-review-file` for the onboarding plan proposal and approval, brand submissions and every `play.approve`; it requires the current generated Markdown and matching recorded independent review. Material source or strategy changes require another independent review. Operational timestamps, workspace versions and review tokens do not require repeating the semantic review; refresh each exact action's claim hash and current-state checks. Keep the artifact unchanged between retries. Reconcile the canonical approval target and every requested email preview first, then record the exact observations in the artifact. The API refuses new Play approvals without matching reconciliation evidence; a digest does not prove the observations are correct. Record missing drafts and mismatches. Enable intake and sending explicitly against the current readiness version, then deploy the live key. Start a delivery proof before triggering a new occurrence through the deployed product. Bind the resulting event and poll until `delivered`, or report its precise held/failed state. Historical setup stamps, a duplicate event, backfill and provider acceptance cannot pass this proof.
-
-Create a readable review artifact alongside the implementation PR and final handoff. Read `references/review-package.md`: with management access, run `manage.mjs review-package`. It includes the complete event plan and proposed and approved plays, with exact example emails and current launch status. Generate it before a required checkpoint, refresh it when the pending operation exists, and refresh after changes and before launch. Full delegation still produces artifacts; it adds no human pause. With event-only access, create the event-plan Markdown described there using the contract and repo evidence. Label plays and launch information you cannot read; do not ask for a management key solely to produce a report.
-
-Sender setup uses Amazon SES by default. Prepare the exact domain in the current From address, verify the returned configuration, and activate it explicitly under the connection's launch policy. Mailgun configurations are historical reads only; do not request Mailgun setup or activation. See the domain steps in `references/management.md`.
-
-Use plain factual prose in the playbook and reports. Name the actual product behavior and outcome. Avoid promotional filler, dramatic fragments, repetitive lists and contrast slogans. Report what you verified and what is waiting. Name the next action in a few sentences.
+For both paths, read and complete [journey-review.md](references/journey-review.md):
+native source discovery before drafting, then a separate fresh independent review
+before any onboarding plan proposal, approval or brand submission. Retain the
+complete journey artifacts and reconcile exact Play revisions as that procedure
+requires. Full delegation adds no human pause. Produce the current
+[review package](references/review-package.md) for the handoff, including incomplete
+runs. Use plain factual prose; name the verified outcome and next action.
+Avoid promotional filler, dramatic fragments, repetitive lists and contrast slogans.
 
 ## Saved segments and one-off campaigns
 
-Read the campaign workflow in `references/management.md` and current
-`capabilities` before taking an action. `segment:write`, `campaign:write` and
-`campaign:send` are separate grants. Campaign review is on by default when an
-owner grants sending; removing that checkpoint requires the owner's explicit
-delegation. Existing setup or play permissions do not grant campaign sending.
+Before segment or campaign actions, read and follow
+[Send one campaign to a saved segment](references/management.md#send-one-campaign-to-a-saved-segment).
+Setup and Play permissions do not grant campaign sending.
 
-Read `segment-fields` for the current `segmentFields` and `mergeFields` before
-writing rules or naming personalization fields. Reuse a saved segment when it
-matches the request, or create one from those supported customer facts.
-Preview it and report missing evidence and exclusions. Give
-Barua the campaign message, supported facts, destination and any required fields.
-Barua drafts and designs the email from the saved brand and voice. Do not
-handwrite HTML or change workspace brand settings to make a one-off email.
-
-After `campaign.prepare`, read the returned job until it finishes, then read
-the campaign's fixed audience, exclusion reasons and each language preview.
-Preparation is not permission to send. Use the exact campaign version and
-prepared revision in `campaign.send`; retain the same operation through an
-owner review. A successful operation can still leave a background job running.
-
-Use `now` for the next allowed send window or `scheduled` with the agreed time
-and time zone. `immediate` skips quiet hours and the 20-hour marketing gap and
-requires explicit authorization for that exception. It still respects consent,
-suppression, an active send, provider checks and expiry. Without an explicit
-expiry, the campaign expires 14 days after sending starts. Do not enable
-lifecycle play sending as a campaign prerequisite.
-
-Follow returned cursors when reading campaigns, segments or recipients.
-Recipient reads need `people:read`; synthetic previews do not. Keep accepted,
-delivered, failed and unknown counts separate. Unknown provider outcomes must
-be reconciled before retrying. Report delivery only when it is recorded.
-
-The API is under `https://barua.ai/api/integrations/v1`, called with `Authorization: Bearer $BARUA_API_KEY`. When `BARUA_API_URL` is set, it replaces `https://barua.ai`. It must be https, because the key travels in a header. Plain http works only for localhost. `references/events.md` is the full contract. `references/reading-repos.md` says where to look in each kind of repo.
+The event API is `https://barua.ai/api/integrations/v1`, using
+`Authorization: Bearer $BARUA_API_KEY`. `BARUA_API_URL` overrides the origin.
+HTTPS is required except on localhost. Read `references/events.md` for the
+contract and `references/reading-repos.md` for repo discovery.
 
 ## Install
 

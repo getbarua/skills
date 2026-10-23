@@ -5,6 +5,10 @@ connection. For emitting product events, use [events.md](events.md). Workspace
 creation, membership administration, billing and workspace deletion are outside
 this API.
 
+Enabled pixel observations can inform and trigger marketing plays for identified
+people under the existing marketing basis. Server events remain authoritative
+for consent and transactional email.
+
 ## Access and discovery
 
 `BARUA_MANAGEMENT_KEY` is a workspace-specific `mk_` secret. It authorizes
@@ -14,7 +18,7 @@ below. The owner selects permissions and review checkpoints. An expiry is option
 `review: []` delegates the permitted actions without an extra review. Checkpoints
 can be any of `plan`, `brand`, `play`, `launch`, `campaign`, and apply to later changes too.
 Full delegation does not add permissions. Check the actual grant before saying
-that launch is allowed.
+that launch is allowed. Do not substitute browser clicks for a missing permission.
 
 Management keys have no test or production mode. Their permissions apply to
 the real workspace, including live intake and sending when launch is granted
@@ -33,7 +37,7 @@ the test event key belongs in development or CI, and the live event key belongs
 in production hosting secrets. Read each key's recorded `mode`; its prefix
 cannot distinguish test from live. Use test keys for emitter checks. A management
 key cannot replace either event key, and a test event key does not make management
-actions a dry run.
+actions a dry run. Test events validate without creating people or sending email.
 
 Start with `GET /capabilities`. It returns the current connection policy and
 legal version. Each action has a JSON input schema alongside its permission
@@ -58,6 +62,7 @@ determine whether this agent can perform its corresponding action.
 
 A grant does not establish consent or another lawful basis. Supply a factual
 statement only from an owner or an agent specifically authorized to make it.
+A recipient's recorded refusal still wins.
 Current terms are required for changes. The stop actions `sending.pause`,
 `intake.disable`, `play.pause`, `play.entries.stop`, `play.run.cancel`,
 `key.revoke`, `campaign.pause`, `campaign.cancel`, and connection revocation,
@@ -113,6 +118,11 @@ idempotency key and a new destination; it must not create another credential.
 even when a previous process lost the successful response. `status` only reads
 metadata. If the key has been revoked or recovery is no longer permitted, a key
 command reports `secret_unavailable` instead of claiming the secret was saved.
+
+Each event-key mode has two active slots. Rotate by creating the replacement,
+installing it and proving fresh traffic before revoking the old key. Never
+revoke a working key just to make space without an approved rotation path.
+Keep secrets out of prompts, logs and commits as well as command arguments.
 
 A workspace allows 20 unrevoked, unexpired management connections. Expired
 records remain in history without using a slot; renewing one needs a free slot.
@@ -443,6 +453,7 @@ absent are not zero; read campaign detail for current results.
    supported customer-fact condition grammar. `segment.update` additionally
    takes `segmentId` and the numeric `expectedVersion`. Use recorded facts;
    missing evidence must not become a zero or an invented trait.
+   Reuse a saved segment when it matches the request.
 2. Submit `segment.preview` with `{segmentId,expectedVersion}`. Read its
    returned job ID with `campaign-job`, then read the segment for counts and
    exclusions. These counts can change before campaign preparation.
@@ -451,6 +462,8 @@ absent are not zero; read campaign detail for current results.
    supported details, `cta_url` supplies its destination, `required_fields`
    names fields every recipient must have, and `optional_fields` maps fields
    to explicit fallbacks. Use the saved brand, voice and email design.
+   Barua drafts and designs the email; do not handwrite HTML or change workspace
+   brand settings to make a one-off email.
    `campaign.update` takes those same fields plus `campaignId` and numeric
    `expectedVersion`; changes require fresh preparation.
 4. Submit `campaign.prepare` with `{campaignId,expectedVersion}`. Keep its
@@ -551,6 +564,7 @@ connection with the owner only after securing its handoff. Do not repeatedly
 ask for an unavailable key. Do not duplicate or revoke existing access
 without authorization. A revoked or expired grant needs a new authorized
 connection or owner-approved renewal, not a recovery retry loop.
+Verify that the deployed recovery path exists before directing the owner there.
 
 ## Complete setup and later changes
 
@@ -646,6 +660,7 @@ review flow under the current grant.
    establishes delivery. `provider_accepted` is still waiting for the provider's
    delivery report. A held event reports the stage and reason code; do not fake consent
    or bypass suppression to make it pass.
+   Historical setup stamps, a duplicate event or backfill cannot pass this proof.
 7. **Finish every run with a current review package.** Follow
    [Finish and hand off](#finish-and-hand-off), including when only some of the
    steps above apply. An earlier process's export does not describe changes

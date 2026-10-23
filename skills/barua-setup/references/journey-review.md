@@ -25,8 +25,10 @@ Before writing the strategy, generate `--render discovery-task` using the
 [task context below](#prepare-the-review-packet-and-task) and start its fresh
 native agent. Pass its prompt unchanged, with the specified model, effort and
 foreground controls. It reads product source only and returns a completed
-checklist. Save that result privately beside the journey artifact. It is advice,
-not approval, and must not be used as the final reviewer's initial context.
+checklist. Retain the completed native result. A separate private copy is
+optional; do not transcribe the whole result just to create another file.
+It is advice, not approval, and must not be used as the final reviewer's
+initial context.
 
 Reuse its observed facts as the first-pass source inventory. Verify uncertain
 or missing evidence against the actual product, then map each assessment
@@ -173,9 +175,14 @@ Hold an affected action when an essential fact, permission or capability is
 missing; do not invent those facts to fill the row.
 
 When an email needs a fixed product or action URL, put the source-reviewed
-absolute URL in `context` or `facts`. Preserve the known URL exactly. A relative
-route does not establish its public origin; do not invent one. These fields
-reach the playbook and its link checks.
+absolute URL in `context` or `facts`. Preserve the known URL exactly. Read the
+workspace's setup and brand responses too: a recorded `site_origin` or confirmed
+brand site URL supplies the public origin for a source-verified product route.
+Record the response as evidence, combine that origin with the actual action
+route and verify its prerequisites. Do not call the origin unknown merely
+because the product source omits it.
+A relative route alone does not establish its origin. These fields reach the
+playbook and its link checks.
 
 Record the useful customer outcome and its source-supported behavior before
 choosing a disposition. Keep the known trigger, eligibility, timing, stops,
