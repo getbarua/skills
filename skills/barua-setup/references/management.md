@@ -60,6 +60,7 @@ determine whether this agent can perform its corresponding action.
 | `campaign:send` | Sending, pausing, resuming and cancelling campaigns |
 | `history:write` | Authorizing runtime keys to import history |
 | `people:read` | Customer lists, current profiles, masked activity and real-profile preview; runtime keys with this permission |
+| `emails:read` | Saved email content and delivery evidence; also requires `people:read` |
 | `people:erase` | Erasure actions and runtime keys with this permission |
 | `marketing:attest` | Recording an explicit marketing-lawful-basis statement |
 
@@ -275,6 +276,10 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `GET /segments`, `/segments/:id` | Saved segments and current detail; lists take `after` and return `next` |
 | `GET /campaigns`, `/campaigns/:id` | Campaign summaries or full prepared detail; lists take `after` and return `next` |
 | `GET /campaigns/:id/recipients` | Prepared audience results; takes `after`, returns `next`, and requires `people:read` |
+| `GET /emails` | Saved email metadata; requires both `people:read` and `emails:read`. Accepts `status`, `person_id`, `decision_id`, `campaign_recipient_id`, `play_id`, `limit` (1–100; default 20), and the returned opaque `cursor`. Returns `emails` and `next`. |
+| `GET /emails/:id` | Saved email detail and delivery evidence. Exact accepted submissions are distinguished from prepared payloads and legacy saved drafts with an unknown historical recipient. |
+| `GET /emails/:id/preview` | Inert text HTML; cannot load tracking resources or follow links. Same two permissions. |
+| `GET /emails/:id/raw` | Explicit raw HTML attachment. Save privately; do not open it as an active page or paste it into chat. Same two permissions. |
 | `GET /campaign-jobs/:id` | One preparation, segment preview or send job's status and progress |
 | `GET /setup`, `/plan`, `/events/status`, `/brand`, `/keys`, `/domain` | Current setup and configuration; domain read does not verify DNS or flush sending |
 | `GET /templates/inbound`, `/templates/inbound/:id` | Forwarding address and existing email layouts; requires `setup:write` |
