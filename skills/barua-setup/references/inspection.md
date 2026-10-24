@@ -108,7 +108,9 @@ refuse final symlinks and must already be ignored when inside Git. Existing
 files are never overwritten. Failed reads remove the unfinished destination.
 Do not commit or publish customer artifacts.
 
-Follow the declared `next_cursor` response field, repeating the same filters.
+Follow the read's declared pagination field, repeating the same filters.
+Email history returns `next`; pass it to `inspect.mjs emails --cursor` until
+it is null. People and activity reads return `next_cursor` for `--cursor`.
 For Play versions, pass the returned `nextVersion` to `manage.mjs play
 --play-id <slug> --after-version <uuid>`, preserving any `--revision-id`.
 `inspect.mjs` never retries or automatically walks pages. It accepts
