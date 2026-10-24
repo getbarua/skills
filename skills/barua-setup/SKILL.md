@@ -75,6 +75,11 @@ Or copy this folder to `.claude/skills/barua-setup/` for Claude Code, or to `.ag
 Install the whole folder: `review-package` needs `scripts/review-package.mjs` beside `scripts/manage.mjs`.
 Owner access needs `scripts/owner-storage.mjs` beside `scripts/owner.mjs`.
 Both owner and management helpers need `scripts/private-input.mjs` beside them.
+For headless customer, segment, email and diagnostic reads, use
+[inspection.md](references/inspection.md). `scripts/inspect.mjs` needs
+`scripts/inspect-output.mjs`, `scripts/owner-storage.mjs` and
+`scripts/private-input.mjs` beside it.
+It saves email previews privately without loading tracking or unsubscribe links.
 The task formatters need [`templates/journey-discovery-task.md`](templates/journey-discovery-task.md) and [`templates/journey-review-task.md`](templates/journey-review-task.md); final review reads [`references/events.md`](references/events.md) after its own source-first checklist.
 When downloading helpers manually, preserve all three relative paths beside the `scripts` directory.
 

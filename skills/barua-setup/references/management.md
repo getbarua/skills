@@ -1,5 +1,8 @@
 # Manage a Barua workspace
 
+For customer profiles, segments, stored emails, previews and diagnostics, see
+[inspection.md](inspection.md). It lists each read, helper and required scope.
+
 Use this page for setup and ongoing changes with an owner-authorized management
 connection. For emitting product events, use [events.md](events.md). Workspace
 creation, membership administration, billing and workspace deletion are outside

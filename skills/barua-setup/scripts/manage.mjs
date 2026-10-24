@@ -46,6 +46,7 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --limit <n>              people/person-activity/person-events page size, 1..100
 --play-id <slug>         exact Play ID for play and play-* inspection commands
 --revision-id <uuid>     immutable revision for play/definition/validate/simulate/paths
+--after-version <uuid>   nextVersion from play detail, to read older versions
 --after <cursor>         next cursor from operations, segment/campaign lists,
                          campaign recipients or Play history pages
 --status <status>        play-admissions filter: blocked, admitted, expired, cancelled
@@ -254,7 +255,7 @@ async function main() {
     'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' }, status: { type: 'string' },
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
     'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
-    'opportunity-id': { type: 'string' },
+    'opportunity-id': { type: 'string' }, 'after-version': { type: 'string' },
     'session-id': { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
@@ -280,6 +281,9 @@ async function main() {
     fail('invalid_flag', 'Provide --play-id for a Play inspection command.');
   }
   const needsRevision = ['play-definition','play-validate','play-simulate','play-paths'].includes(command);
+  if (args['after-version'] !== undefined && (command !== 'play' || !UUID.test(args['after-version']))) {
+    fail('invalid_flag', 'Use --after-version only with play and its returned version UUID.');
+  }
   if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined
     && (command !== 'play' || !UUID.test(args['revision-id']))) {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
@@ -480,7 +484,9 @@ async function main() {
     if (playCommands.includes(command)) {
       const path = `${prefix}/plays/${args['play-id']}`;
       if (command === 'play') {
-        const response = await request(`${path}/detail${args['revision-id'] ? `?revisionId=${args['revision-id']}` : ''}`);
+        const query = new URLSearchParams({ ...(args['revision-id'] ? { revisionId: args['revision-id'] } : {}),
+          ...(args['after-version'] ? { afterVersion: args['after-version'] } : {}) });
+        const response = await request(`${path}/detail${query.size ? `?${query}` : ''}`);
         if (response.status >= 200 && response.status < 300 && response.body?.summary?.id === args['play-id']) {
           reviewSummaries.add(response.body.summary);
         }
