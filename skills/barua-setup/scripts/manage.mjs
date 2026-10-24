@@ -1,7 +1,9 @@
 // Headless Barua management. Node 18.17+, no dependencies. Credentials come
 // only from the environment; ordinary output is one redacted JSON object.
+// Install private-input.mjs beside this file for bounded local JSON reads.
 import { parseArgs } from 'node:util';
-import { openSync, closeSync, writeFileSync, readFileSync, realpathSync, unlinkSync, constants, fchmodSync, fstatSync } from 'node:fs';
+import { openSync, closeSync, writeFileSync, realpathSync, unlinkSync, constants, fchmodSync } from 'node:fs';
+import { readPrivateInput } from './private-input.mjs';
 import { dirname, basename, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -21,13 +23,13 @@ Commands: connect, recover-key, connections, capabilities, setup, usage, operati
           action, resume, cancel, review, wait, proof, review-package, segments, segment, campaigns,
           campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
-          play-feedback, play-paths
+          play-feedback, play-paths, people, people-search, person, person-activity, person-events
 
 BARUA_URL defaults to https://barua.ai. BARUA_MANAGEMENT_KEY authorizes
 management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN and
 BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 
---input-file <file>       JSON body for connect/action/review; otherwise stdin
+--input-file <file>       JSON body for connect/action/review/people-search; otherwise stdin
 --journey-review-file <file>  private source review for plan.propose or brand actions;
                              exact per-Play request for play.propose;
                              exact approval observations for play.approve;
@@ -37,7 +39,11 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --idempotency-key <id>    required for connect/action; reuse after response loss
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
                          connection ID for recover-key; segment/campaign ID for its read;
-                         job ID for campaign-job/play-job; run ID for play-trace
+                         job ID for campaign-job/play-job; run ID for play-trace;
+                         person ID for person/person-activity/person-events
+--session-id <uuid>      session ID from person-activity, required for person-events
+--cursor <cursor>        next_cursor from people/person-activity/person-events
+--limit <n>              people/person-activity/person-events page size, 1..100
 --play-id <slug>         exact Play ID for play and play-* inspection commands
 --revision-id <uuid>     immutable revision for play/definition/validate/simulate/paths
 --after <cursor>         next cursor from operations, segment/campaign lists,
@@ -50,6 +56,11 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --poll-ms <n>            wait polling interval, 100..10000, default 1000
 --output-dir <new-dir>   review-package: private HTML and JSON, never overwritten
 --proof-id <uuid>        review-package: read an existing delivery proof
+
+People commands require people:read. people-search reads exactly one of email
+or external_id from a private JSON body, with optional limit and cursor.
+It is read-only. Keep search details out of command arguments and URLs.
+Profile sections marked unavailable must not be interpreted as empty.
 
 connect, recover-key and action key.create require a secret destination before sending.
 resume and wait require one before executing a key.create operation. Never
@@ -100,11 +111,7 @@ function integer(value, fallback, minimum, maximum, name) {
 async function inputBody(file, deadline) {
   let text;
   if (file) {
-    const fd = openSync(file, 'r');
-    try {
-      if (!fstatSync(fd).isFile() || fstatSync(fd).size > 524288) fail('input_too_large', 'Use a JSON file of at most 512 KiB.');
-      text = readFileSync(fd, 'utf8');
-    } finally { closeSync(fd); }
+    text = readPrivateInput(file, { maxBytes: 524288, deadline, code: 'input_too_large', message: 'Use a JSON file of at most 512 KiB.' }).text;
   } else {
     if (process.stdin.isTTY) {
       fail('input_required', 'Send the JSON body on stdin or with --input-file.');
@@ -208,7 +215,9 @@ async function secretSink(args, deadline) {
   }
   if (args['secret-command-file']) {
     let argv;
-    try { argv = JSON.parse(readFileSync(args['secret-command-file'], 'utf8')); } catch { fail('secret_destination', 'The secret command file must contain a JSON argv array.'); }
+    try { argv = JSON.parse(readPrivateInput(args['secret-command-file'], { maxBytes: 65536, deadline,
+      code: 'secret_destination', message: 'Use a regular secret command file of at most 64 KiB.' }).text); }
+    catch { fail('secret_destination', 'The secret command file must contain a JSON argv array of at most 64 KiB.'); }
     if (!Array.isArray(argv) || !argv.length || argv.length > 100 || argv.some(arg => typeof arg !== 'string' || arg.includes('\0')) || !argv[0]) {
       fail('secret_destination', 'The secret command file must contain a nonempty JSON argv array.');
     }
@@ -246,16 +255,27 @@ async function main() {
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
     'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
     'opportunity-id': { type: 'string' },
+    'session-id': { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
     'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
-    'play-catalog','play-job', ...playCommands];
+    'play-catalog','play-job','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace'].includes(command);
+  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events'].includes(command);
   if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a UUID.');
+  if (command === 'person-events' ? !UUID.test(args['session-id'] ?? '') : args['session-id'] !== undefined) {
+    fail('invalid_flag', 'Provide --session-id only for person-events, using a session UUID.');
+  }
+  const peoplePage = ['people','person-activity','person-events'].includes(command);
+  if (args.cursor !== undefined && (!peoplePage || !args.cursor || args.cursor.length > 4096 || /[\u0000-\u001f\u007f]/.test(args.cursor))) {
+    fail('invalid_flag', 'Use --cursor with a people or activity page and its returned cursor.');
+  }
+  if (args.limit !== undefined && (!peoplePage || !/^(?:[1-9][0-9]?|100)$/.test(args.limit))) {
+    fail('invalid_flag', 'Use --limit with a people or activity page, from 1 to 100.');
+  }
   if (playCommands.includes(command) ? !/^[a-z][a-z0-9_]{0,63}$/.test(args['play-id'] ?? '') : args['play-id'] !== undefined) {
     fail('invalid_flag', 'Provide --play-id for a Play inspection command.');
   }
@@ -280,8 +300,9 @@ async function main() {
     fail('invalid_flag', 'Provide an Idempotency-Key for connect or action.');
   }
   const writes = ['connect','action','review','proof','play-simulate'].includes(command);
+  const privateRead = command === 'people-search';
   if (args['bind-stdin'] && (command !== 'proof' || args['input-file'])) fail('invalid_flag', 'Use --bind-stdin only with proof and without --input-file.');
-  if (!writes && command !== 'review-package' && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
+  if (!writes && !privateRead && command !== 'review-package' && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
   if (command === 'review-package' ? !args['output-dir'] : args['output-dir'] || args['proof-id']) fail('invalid_flag', 'Use --output-dir with review-package.');
   if (args['proof-id'] && !UUID.test(args['proof-id'])) fail('invalid_flag', 'Use a proof operation UUID with --proof-id.');
   if (!['connect','recover-key','action','resume','wait'].includes(command) && (args['secret-file'] || args['secret-command-file'])) {
@@ -301,7 +322,7 @@ async function main() {
   const headers = { authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json',
     ...(owner ? { 'x-workspace-id': process.env.BARUA_WORKSPACE_ID } : {}),
     ...(creates ? { 'idempotency-key': args['idempotency-key'] } : {}) };
-  const body = (writes && (command !== 'proof' || args['input-file'] || args['bind-stdin'])) || (command === 'review-package' && args['input-file'])
+  const body = ((writes || privateRead) && (command !== 'proof' || args['input-file'] || args['bind-stdin'])) || (command === 'review-package' && args['input-file'])
     ? await inputBody(args['input-file'], deadline) : undefined;
   if (command === 'proof' && body !== undefined && (Object.keys(body).length !== 1 || typeof body.eventId !== 'string' || !body.eventId || body.eventId.length > 577)) {
     fail('invalid_proof', 'Bind a proof with a JSON object containing only eventId.');
@@ -440,6 +461,13 @@ async function main() {
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
     if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
     if (command === 'connections') return await finish(await request('/api/agent-connections'));
+    if (command === 'people-search') return await finish(await request(`${prefix}/people/search`, 'POST', body));
+    if (peoplePage || command === 'person') {
+      const path = command === 'people' ? '/people' : `/people/${args.id}`
+        + (command === 'person-activity' ? '/activity' : command === 'person-events' ? `/sessions/${args['session-id']}/events` : '');
+      const query = new URLSearchParams({ ...(args.limit ? { limit: args.limit } : {}), ...(args.cursor ? { cursor: args.cursor } : {}) });
+      return await finish(await request(`${prefix}${path}${query.size ? `?${query}` : ''}`));
+    }
     if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields'].includes(command)) {
       return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     }

@@ -4,6 +4,9 @@ Use this page for setup and ongoing changes with an owner-authorized management
 connection. For emitting product events, use [events.md](events.md). Workspace
 creation, membership administration, billing and workspace deletion are outside
 this API.
+For the owner's account, workspace creation, team and exact reviews, use
+[owner.md](owner.md) and `scripts/owner.mjs`. That separate owner API preserves
+admission and membership checks and does not require opening the app.
 
 Enabled pixel observations can inform and trigger marketing plays for identified
 people under the existing marketing basis. Server events remain authoritative
@@ -56,7 +59,7 @@ determine whether this agent can perform its corresponding action.
 | `campaign:write` | Creating, updating and preparing campaign drafts with Barua |
 | `campaign:send` | Sending, pausing, resuming and cancelling campaigns |
 | `history:write` | Authorizing runtime keys to import history |
-| `people:read` | Customer lookup and real-profile preview; runtime keys with this permission |
+| `people:read` | Customer lists, current profiles, masked activity and real-profile preview; runtime keys with this permission |
 | `people:erase` | Erasure actions and runtime keys with this permission |
 | `marketing:attest` | Recording an explicit marketing-lawful-basis statement |
 
@@ -74,6 +77,41 @@ needed to stop. Key lists, play details and campaign lists are also readable.
 All current workspace owners must accept
 the current terms before live intake can start. Accepting future legal versions
 is never implied by a connection.
+
+## People without the UI
+
+`GET /capabilities` includes a `reads` map keyed by helper command. Each entry
+states its HTTP method, path and permission, whether this connection is allowed,
+and its pagination fields. These reads require current terms and `people:read`.
+
+| Helper command | API route | Input |
+| --- | --- | --- |
+| `people` | `GET /people` | Optional `--limit` and `--cursor` |
+| `people-search` | `POST /people/search` | Private JSON through stdin or `--input-file` |
+| `person` | `GET /people/:id` | `--id` with the person UUID |
+| `person-activity` | `GET /people/:id/activity` | `--id`, optional `--limit` and `--cursor` |
+| `person-events` | `GET /people/:id/sessions/:sessionId/events` | `--id`, `--session-id`, optional `--limit` and `--cursor` |
+
+Search JSON contains exactly one of `email` and `external_id`, with optional
+`limit` and `cursor`. Keep those private details out of URLs and command
+arguments. Search uses current identity evidence, including canonical email
+aliases. A still-current external-ID alias can find a person even when another
+source supplies their displayed ID. Retired identities do not count as matches.
+
+Pages default to 20 items and accept at most 100. Continue with `next_cursor`
+until it is null, keeping the same page size and filters. People are ordered by
+UUID; activity by newest session start. Pages reflect live data, so begin a new
+walk to see newly inserted rows behind an existing cursor.
+
+`person` returns identity plus `facts`, `canonical`, `pixel` and `suppression`
+sections. Check each section's `state` before using its `data`. `available`
+with null data means no retained result; `unavailable` means the read failed
+or exceeded its budget. `complete` is false if any section was unavailable.
+Never treat unavailable suppression as permission to send. Activity includes
+undigested sessions; use its session `id` with `person-events`. Events contain
+masked readable labels and decimal-string IDs, never replay objects or form
+values. These commands do not send email or run a model. Email bodies and
+email history are outside these people reads.
 
 ## Helper
 

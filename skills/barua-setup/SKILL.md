@@ -16,6 +16,13 @@ does not replace the full instructions.
 
 ## Choose your access path
 
+For the owner's own account, workspace setup or an exact approval, read
+[owner.md](references/owner.md) and use `scripts/owner.mjs`. It signs in
+without the app and keeps credentials private. Early-access admission still
+applies. Read the current legal documents before supplying an exact acceptance;
+never accept terms automatically. Owner access can create or recover the
+management connection used below.
+
 - With `BARUA_MANAGEMENT_KEY`, read [management.md](references/management.md)
   before any action. Run `scripts/manage.mjs capabilities` and `setup`, then
   follow [Complete setup and later changes](references/management.md#complete-setup-and-later-changes).
@@ -66,6 +73,8 @@ npx skills add getbarua/skills --skill barua-setup -a claude-code -y
 
 Or copy this folder to `.claude/skills/barua-setup/` for Claude Code, or to `.agents/skills/barua-setup/` for Codex.
 Install the whole folder: `review-package` needs `scripts/review-package.mjs` beside `scripts/manage.mjs`.
+Owner access needs `scripts/owner-storage.mjs` beside `scripts/owner.mjs`.
+Both owner and management helpers need `scripts/private-input.mjs` beside them.
 The task formatters need [`templates/journey-discovery-task.md`](templates/journey-discovery-task.md) and [`templates/journey-review-task.md`](templates/journey-review-task.md); final review reads [`references/events.md`](references/events.md) after its own source-first checklist.
 When downloading helpers manually, preserve all three relative paths beside the `scripts` directory.
 
