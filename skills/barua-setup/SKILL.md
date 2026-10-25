@@ -16,6 +16,13 @@ does not replace the full instructions.
 
 ## Choose your access path
 
+For a read-only inspection, follow [inspection.md](references/inspection.md).
+Read capabilities and the requested evidence through the published helpers.
+Setup and sender configuration are separate reads, not prerequisites for
+domain health, profiles or saved email. Do not start the setup journey or
+fetch unrelated diagnostics. Use the owner path only if the requested access
+needs a new connection, then remove owner credentials from management reads.
+
 For the owner's own account, workspace setup or an exact approval, read
 [owner.md](references/owner.md) and use `scripts/owner.mjs`. It signs in
 without the app and keeps credentials private. Early-access admission still
@@ -23,7 +30,7 @@ applies. Read the current legal documents before supplying an exact acceptance;
 never accept terms automatically. Owner access can create or recover the
 management connection used below.
 
-- With `BARUA_MANAGEMENT_KEY`, read [management.md](references/management.md)
+- For setup or changes with `BARUA_MANAGEMENT_KEY`, read [management.md](references/management.md)
   before any action. Run `scripts/manage.mjs capabilities` and `setup`, then
   follow [Complete setup and later changes](references/management.md#complete-setup-and-later-changes).
   The returned grant and review policy determine what you can do. Complete

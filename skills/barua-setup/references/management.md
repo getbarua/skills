@@ -246,6 +246,10 @@ checkpoint means the permission alone authorizes it.
 | `domain.provision` | `setup:write` | |
 | `domain.verify` | `setup:write` | |
 | `domain.activate` | `launch:write` | `launch` |
+| `deliverability.configure` | `launch:write` | `launch` |
+| `deliverability.pause` | `launch:write` | |
+| `deliverability.resume` | `launch:write` | `launch` |
+| `deliverability.check` | `setup:write` | |
 | `play.propose` | `play:write` | |
 | `play.approve` | `play:write` | `play` |
 | `play.discard-proposal` | `play:write` | |
@@ -285,6 +289,7 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `GET /emails/:id/raw` | Explicit raw HTML attachment. Save privately; do not open it as an active page or paste it into chat. Same two permissions. |
 | `GET /campaign-jobs/:id` | One preparation, segment preview or send job's status and progress |
 | `GET /setup`, `/plan`, `/events/status`, `/brand`, `/keys`, `/domain` | Current setup and configuration; domain read does not verify DNS or flush sending |
+| `GET /deliverability` | Cached domain checks and accepted-message feedback; read with `inspect.mjs deliverability`. Also available with stale terms so an agent can discover the exact target for a marketing stop. |
 | `GET /templates/inbound`, `/templates/inbound/:id` | Forwarding address and existing email layouts; requires `setup:write` |
 | `GET /plays`, `/plays/:id/detail` | Play list and exact review detail; the detail route supports every valid play ID |
 | `GET /plays/mode`, `/plays/map`, `/plays/results` | Current review mode, play map and aggregate results |
@@ -303,6 +308,59 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `POST /actions` | Submit `{action,input}` with `Idempotency-Key` |
 | `POST /operations/:id/resume`, `/operations/:id/cancel` | Continue or cancel the same operation |
 | `GET /proofs/:id`, `POST /proofs/:id/bind` | Read proof or bind `{eventId}` in the request body |
+
+## Deliverability
+
+Run `node scripts/inspect.mjs deliverability` to read the active domain's
+technical checks and marketing controls. This read makes no DNS requests and
+sends no email. Any active management connection can read it; it contains no
+customer addresses. The browser's Deliverability screen uses the same evidence.
+
+The response includes `domain` and its numeric `version`, `controlsAccepted`,
+`marketingPaused`, `technical` checks, `hold`, separate `metrics.marketing` and
+`metrics.service` cohorts, and `nextEligibleAt`. A missing active domain has null
+`domain` and `version`. Technical checks include their time and source; unknown
+or stale evidence must not be described as passing. The counts match accepted
+messages to their feedback. `coverage` is final outcomes divided by accepted
+messages, or null without accepted messages. These are separate from the
+existing 30-day event counters. Receiving-server acceptance is not proof of
+inbox placement.
+
+Use `manage.mjs action` with an `Idempotency-Key` and the current domain/version:
+
+```json
+{
+  "action": "deliverability.configure",
+  "input": { "domain": "mail.example.org", "expectedVersion": 2, "controlsAccepted": true }
+}
+```
+
+This explicitly accepts automatic marketing holds for failed or expired domain
+checks and repeated hard bounces. Existing senders show observations until the
+owner accepts. Activation alone leaves controls observing, including old
+requests replayed during deployment. `automaticControlsAvailable` must be
+true before configure/check: the active sender must be verified SES. Legacy
+Mailgun keeps observation and manual pause/resume until SES setup is complete.
+Configure and resume need `launch:write` and the connection's `launch` review
+checkpoint. `deliverability.pause` uses the same domain/version with no other
+fields and needs `launch:write`; it remains available when terms are stale.
+`deliverability.check` needs `setup:write` and queues a fresh check using that
+same target. It does not wait for DNS or change sending permissions.
+
+To resume, submit `deliverability.resume` with the current domain/version.
+When `hold.bounceIncidentId` is present, review the audience and include that
+exact UUID as `incidentId`. A changed incident or version refuses the request.
+Resume preserves historical evidence. It cannot clear a technical hold or
+turn on workspace sending, and it leaves campaign and Play pauses in place.
+Receipts and order updates keep their existing checks. New feedback can hold
+marketing again.
+
+Read the resulting operation and follow the usual review/resume workflow.
+After a lost response, retry with the same request and idempotency key. Read
+health again after completion. `mode: "normal"` describes the current sending
+policy; it does not certify reputation or successful warm-up.
+
+## Setup and Play reads
 
 `GET /plan` includes canonical core event definitions alongside proposed and
 approved custom plans. The review-package helper requires those definitions

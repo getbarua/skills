@@ -14,7 +14,7 @@ const CSP = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ance
 const commands = {
   keys: { path: '/keys' }, brand: { path: '/brand' }, plan: { path: '/plan' },
   'event-status': { path: '/events/status' }, events: { path: '/diagnostics/events' }, stats: { path: '/diagnostics/stats', options: ['health'] },
-  catalog: { path: '/plays/catalog' }, domain: { path: '/domain', options: ['provider', 'config-id'] },
+  catalog: { path: '/plays/catalog' }, domain: { path: '/domain', options: ['provider', 'config-id'] }, deliverability: { path: '/deliverability' },
   'inbound-templates': { path: '/templates/inbound', options: ['before'] },
   'inbound-template': { path: a => `/templates/inbound/${a.id}`, id: true },
   plays: { path: '/plays', options: ['revision', 'after', 'group', 'status', 'query'] },
@@ -31,7 +31,7 @@ const commands = {
 };
 const HELP = `Usage: node scripts/inspect.mjs <command> [options]
 
-Reads: keys, brand, plan, event-status, events, stats, catalog, domain,
+Reads: keys, brand, plan, event-status, events, stats, catalog, domain, deliverability,
        inbound-templates, inbound-template, plays, play-map, play-mode,
        play-results, play-template, play-profiles, play-preview, profile-preview,
        emails, email, email-preview, email-raw

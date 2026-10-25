@@ -1,5 +1,10 @@
 # Read Barua without the app
 
+Keep a read-only task to its requested evidence. Domain delivery health uses
+`inspect.mjs deliverability`; it does not require the setup or sender-config
+reads. Use those separate diagnostics when the task asks for them. Inspection
+does not require the onboarding journey review or a setup handoff package.
+
 Use `manage.mjs` for customer profiles, segments, campaigns and operation
 status. Use `inspect.mjs` for setup details, diagnostics, Play previews and
 email content. Install the whole skill: inspection needs
@@ -33,6 +38,7 @@ workflow in [management.md](management.md) for changes.
 | `capabilities` | `manage.mjs` | `GET /capabilities` | Connection |
 | `setup` | `manage.mjs` | `GET /setup` | Connection |
 | `usage` | `manage.mjs` | `GET /usage` | Connection |
+| `deliverability` | `inspect.mjs` | `GET /deliverability` | Connection; remains readable with stale terms for stop recovery |
 | `operations` | `manage.mjs` | `GET /operations` | Connection |
 | `status` | `manage.mjs` | `GET /operations/:id` | Connection |
 | `proof` | `manage.mjs` | `GET /proofs/:id` | Connection |
