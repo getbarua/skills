@@ -33,6 +33,12 @@ simulate; they do not save decisions or send email. `proof` here means its
 plain GET form, without the separate event-binding flags. Use the action
 workflow in [management.md](management.md) for changes.
 
+For sender DNS, describe each returned record's status. A verified sender can
+have all required records passing while an optional record, such as DMARC,
+remains recommended or unknown. Name that distinction; do not describe all
+returned records as passing unless every record is passing. Preserve whether
+the evidence came from a local fixture or a live check.
+
 | Command | Helper | Method and path | Required scopes |
 | --- | --- | --- | --- |
 | `capabilities` | `manage.mjs` | `GET /capabilities` | Connection |

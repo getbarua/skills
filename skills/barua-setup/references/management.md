@@ -331,16 +331,38 @@ Use `manage.mjs action` with an `Idempotency-Key` and the current domain/version
 ```json
 {
   "action": "deliverability.configure",
-  "input": { "domain": "mail.example.org", "expectedVersion": 2, "controlsAccepted": true }
+  "input": { "domain": "mail.example.org", "expectedVersion": 2, "controlsAccepted": true,
+    "mode": "gradual", "targetDaily": 1000 }
 }
 ```
 
 This explicitly accepts automatic marketing holds for failed or expired domain
 checks and repeated hard bounces. Existing senders show observations until the
-owner accepts. Activation alone leaves controls observing, including old
-requests replayed during deployment. `automaticControlsAvailable` must be
+owner accepts. Old activation requests replayed during deployment leave
+controls observing. New setup binds the requested sending pace and accepts
+controls for a new domain; a previously used domain keeps its saved policy.
+`automaticControlsAvailable` must be
 true before configure/check: the active sender must be verified SES. Legacy
 Mailgun keeps observation and manual pause/resume until SES setup is complete.
+Offer **Warm up gradually** (recommended) or **Start sending normally**. Do not
+ask for a provider-history import. First-time gradual warm-up starts with 100
+marketing messages per rolling 24 hours; existing domains retain earned
+allowance after inactivity adjustment. Feedback can earn at most 50% growth per day;
+quiet days do not earn growth. `mode: "normal"` removes warm-up volume limits,
+but domain-health and bounce holds still apply. It does not certify reputation.
+`targetDaily` is an integer from 100 through 1,000,000 and caps the earned
+allowance in gradual mode. In Normal, the target and allowance remain saved
+for a later switch; neither limits current sending. Other sending gates still
+apply. Restoring a lowered target can restore previously earned capacity;
+growth beyond that still needs feedback. Omitted mode or target preserves the saved value.
+`controlsAccepted: true` is required only when automatic holds are not already
+accepted. A pace change preserves pauses and history; it does not enable sending.
+
+Read `warmup` separately from `technical`: it includes allowance, rolling daily
+and 30-minute usage, target, campaign limits, growth status/reason, and the next
+eligible time. Usage includes reservations. With active marketing Plays, 25%
+of daily and burst capacity is reserved for them. `nextEligibleAt` is the next
+eligibility check, not a promised send time; approved sending hours still apply.
 Configure and resume need `launch:write` and the connection's `launch` review
 checkpoint. `deliverability.pause` uses the same domain/version with no other
 fields and needs `launch:write`; it remains available when terms are stale.
@@ -359,6 +381,12 @@ Read the resulting operation and follow the usual review/resume workflow.
 After a lost response, retry with the same request and idempotency key. Read
 health again after completion. `mode: "normal"` describes the current sending
 policy; it does not certify reputation or successful warm-up.
+
+For domain activation or delivery-control changes, follow
+[Finish and hand off](#finish-and-hand-off) before every final reply, including
+an approval checkpoint and a resumed operation. Create a fresh `review-package`,
+read its returned HTML and JSON artifacts, and link both. A saved operation or
+health read does not refresh that package.
 
 ## Setup and Play reads
 
@@ -608,6 +636,15 @@ absent are not zero; read campaign detail for current results.
 6. If `campaign` review applies, report the exact pending operation and wait
    for owner review. The owner sees the proposed mode, schedule, expiry,
    audience and language previews. Resume that same operation after approval.
+   Detail and exact review also include `deliveryEstimate`: `status`, `asOf`,
+   `audience`, `unresolvedTimingCount`, `earliestCompletionAt`,
+   `expiresBeforeCompletion` and `assumptions`. The finish is the earliest
+   capacity estimate at today's allowance, never a delivery promise. It does
+   not assume warm-up growth. `partial` keeps unresolved recipient timing
+   explicit; `held` needs the hold resolved, and `unavailable` has no estimate.
+   `not_limited` means warm-up limits are off, not that other checks are off.
+   Report a predicted expiry conflict before requesting approval. Do not
+   change the approved expiry or audience to make the estimate fit.
    A content, audience, version or policy change needs a fresh decision.
    Newly granting campaign sending enables this checkpoint by default; only
    an explicit owner choice delegates sending without it.
@@ -726,12 +763,20 @@ review flow under the current grant.
    hosting credentials for this purpose.
    New setup uses Amazon SES without a provider flag. Use the exact domain
    in the workspace's From address. Read `GET /domain?provider=ses`; verification
-   also takes its `configId` and `configGeneration`. Install only the returned
+   also takes its `configId` and `configGeneration`. Follow the
+   [per-record DNS guidance](inspection.md) when summarizing the result. Install only the returned
    ownership TXT, DKIM and bounce-subdomain records. Preserve existing Mailgun
    records and the domain's root MX. Preparation and verification leave the
    active sender and sending pause unchanged. Activate the verified target
    explicitly with `domain.activate`, using its `configId`, `configGeneration`
-   and `activeGeneration` as `expectedGeneration`. This needs `launch:write`
+   and `activeGeneration` as `expectedGeneration`. Offer `warmupMode: "gradual"`
+   (recommended/default) or `"normal"`; optional `targetDaily` defaults to 1000.
+   These initialize a new domain only. Reactivation preserves its existing pace
+   and usage. Both choices preserve health holds and the sending pause.
+   Older queued activation requests without these fields do not choose a pace
+   or accept automatic marketing holds. After executing one, read deliverability
+   and request `deliverability.configure` if the owner wants those controls.
+   This needs `launch:write`
    and follows the optional launch checkpoint. A readiness refusal requires
    the named prerequisite; never bypass it or treat DNS verification as a
    completed setup. An explicit `provider: "mailgun"` setup request is refused.
