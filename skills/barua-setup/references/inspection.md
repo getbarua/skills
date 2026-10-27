@@ -1,7 +1,7 @@
 # Read Barua without the app
 
 Keep a read-only task to its requested evidence. Domain delivery health uses
-`inspect.mjs deliverability`; it does not require the setup or sender-config
+`inspect.mjs deliverability`, including optional cached provider reports; it does not require the setup or sender-config
 reads. Use those separate diagnostics when the task asks for them. Inspection
 does not require the onboarding journey review or a setup handoff package.
 

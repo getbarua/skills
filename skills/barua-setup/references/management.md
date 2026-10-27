@@ -250,6 +250,9 @@ checkpoint means the permission alone authorizes it.
 | `deliverability.pause` | `launch:write` | |
 | `deliverability.resume` | `launch:write` | `launch` |
 | `deliverability.check` | `setup:write` | |
+| `deliverability.monitoring.refresh` | `setup:write` | |
+| `deliverability.google.connect` | `setup:write` | |
+| `deliverability.google.disconnect` | `setup:write` | |
 | `play.propose` | `play:write` | |
 | `play.approve` | `play:write` | `play` |
 | `play.discard-proposal` | `play:write` | |
@@ -387,6 +390,46 @@ For domain activation or delivery-control changes, follow
 an approval checkpoint and a resumed operation. Create a fresh `review-package`,
 read its returned HTML and JSON artifacts, and link both. A saved operation or
 health read does not refresh that package.
+
+### Provider reports
+
+The same read includes `providerMonitoring` with `enabled`, `googleAvailable`,
+`error`, `sources` and `incidents`. Availability is limited to the rollout cohort.
+Each source names its domain, generation, collection status, last successful
+fetch, latest report date, staleness and provider coverage. Reports contain
+daily metrics with null for unknown values. Google compliance names its exact
+scope; its collection time is not a provider report time. Do not combine
+Google spam rates, SES complaints or Barua's accepted-message ledger into one
+rate or score. Missing and stale reports do not establish good reputation.
+
+These reports warn only. They never enable safeguards, change warm-up or hold
+sending. `error: "reports_unavailable"` means the cached reports could not be
+confirmed; existing delivery controls remain separately readable.
+
+Use `deliverability.monitoring.refresh` with the current `{domain,
+expectedVersion}` to queue a refresh. It requires `setup:write`, reuses requests
+within 15 minutes and respects provider retry delays. A queued refresh is not
+a completed provider check. Read again later.
+
+`deliverability.google.connect` takes the same target and returns
+`requiresOwner: true` with the exact `ownerPath`. Give the owner that path.
+The owner must read and accept the optional Google disclosure and authorize
+Google in the browser. Never accept it for them or ask them to paste tokens.
+`deliverability.google.disconnect` takes the same target plus the current
+Google source's `generation` UUID. It stops that connection and retires its
+pending warnings; it does not change email sending. Disconnect remains
+available with stale terms or disabled monitoring to an authorized connection.
+`disconnectAvailable` marks retained Google access even if optional consent is
+outdated. When collection is disabled, this read keeps the minimal Google
+target needed for revocation, without its reports. API revocation works
+without accepting updated terms. The owner consent and revocation screens
+arrive in stage three; keep the Google rollout disabled until they are deployed
+and verified. An owner handoff is not evidence that the screen is available.
+
+Both Google actions require `setup:write`. Use the normal `manage.mjs action`
+helper with one stable idempotency key per operation. No previous-provider
+history import is needed. Reading reports or connecting Google does not prove
+inbox placement.
 
 ## Setup and Play reads
 
