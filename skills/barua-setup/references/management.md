@@ -421,10 +421,8 @@ pending warnings; it does not change email sending. Disconnect remains
 available with stale terms or disabled monitoring to an authorized connection.
 `disconnectAvailable` marks retained Google access even if optional consent is
 outdated. When collection is disabled, this read keeps the minimal Google
-target needed for revocation, without its reports. API revocation works
-without accepting updated terms. The owner consent and revocation screens
-arrive in stage three; keep the Google rollout disabled until they are deployed
-and verified. An owner handoff is not evidence that the screen is available.
+target needed for revocation, without its reports. The terms screen also
+offers owner revocation without accepting updated terms.
 
 Both Google actions require `setup:write`. Use the normal `manage.mjs action`
 helper with one stable idempotency key per operation. No previous-provider
