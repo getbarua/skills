@@ -47,6 +47,9 @@ reading. `workspace-create` takes the workspace fields and exact acceptance,
 plus a key destination. `workspace-select --workspace <uuid>` verifies current
 membership before storing that selection. Scoped commands cannot silently
 fall back to another workspace. `me` reads its role and terms state.
+Use `terms.stale` to decide whether acceptance is needed. Routine releases
+preserve existing acceptance; compatible document versions can differ from
+`terms.current`. No new agreement is recorded by this check.
 `terms-accept` takes `{"version":"the reviewed version","digest":"the reviewed digest"}`.
 
 Signup and workspace creation are not automatically retried. After a lost

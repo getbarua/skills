@@ -70,7 +70,12 @@ determine whether this agent can perform its corresponding action.
 A grant does not establish consent or another lawful basis. Supply a factual
 statement only from an owner or an agent specifically authorized to make it.
 A recipient's recorded refusal still wins.
-Current terms are required for changes. The stop actions `sending.pause`,
+The required terms acceptance must be satisfied for changes. Use the server's
+`terms_current` result; do not compare version strings yourself. Routine
+releases preserve acceptance. The optional health revision `2026-10-25.1`
+also accepts an existing `2026-10-23.1` receipt without rewriting it. Missing
+acceptance or a material agreement change still needs the owner.
+The stop actions `sending.pause`,
 `intake.disable`, `play.pause`, `play.entries.stop`, `play.run.cancel`,
 `key.revoke`, `campaign.pause`, `campaign.cancel`, and connection revocation,
 remain available when terms are stale. Other valid new or retried actions return
@@ -78,8 +83,8 @@ remain available when terms are stale. Other valid new or retried actions return
 Resuming a non-stop operation also requires current terms, even if it already
 completed. Operation reads remain available so a fresh process can find the IDs
 needed to stop. Key lists, play details and campaign lists are also readable.
-All current workspace owners must accept
-the current terms before live intake can start. Accepting future legal versions
+All current workspace owners must satisfy
+the required acceptance before live intake can start. Accepting future legal versions
 is never implied by a connection.
 
 ## People without the UI
