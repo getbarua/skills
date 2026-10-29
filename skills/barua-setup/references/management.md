@@ -258,6 +258,11 @@ checkpoint means the permission alone authorizes it.
 | `deliverability.monitoring.refresh` | `setup:write` | |
 | `deliverability.google.connect` | `setup:write` | |
 | `deliverability.google.disconnect` | `setup:write` | |
+| `discovery.configure` | `play:write` | |
+| `discovery.refresh` | `play:write` | |
+| `discovery.dismiss` | `play:write` | |
+| `discovery.snooze` | `play:write` | |
+| `discovery.replace` | `play:write` | |
 | `play.propose` | `play:write` | |
 | `play.approve` | `play:write` | `play` |
 | `play.discard-proposal` | `play:write` | |
@@ -463,6 +468,108 @@ Path counts take `revisionId` and cover the latest 30 days, with at most
 10,000 transitions. `complete: false` means the counts cover that bounded
 sample, so do not report them as the whole window. Existing send and goal
 metrics retain their current meaning.
+
+## Discovery opportunities
+
+Use discovery to inspect suggested help grounded in recorded activity and
+confirmed product documentation. The same evidence appears under Opportunities
+in Plays. Reads use `BARUA_MANAGEMENT_KEY` and current terms; aggregate reads
+need no additional permission. Every discovery mutation needs `play:write`
+and follows the existing operation and owner-review policy. Sending authority
+is separate.
+
+| Helper command | HTTP suffix under `/api/management/v1` | Result |
+| --- | --- | --- |
+| `discovery` | `GET /discovery` | Status, capabilities, `opportunities` and opaque `next` cursor |
+| `discovery-opportunity` | `GET /discovery/opportunities/:id` | One opportunity with its exact current `version` and `token` |
+
+```sh
+node "$BARUA_SKILL/scripts/manage.mjs" capabilities
+node "$BARUA_SKILL/scripts/manage.mjs" discovery
+node "$BARUA_SKILL/scripts/manage.mjs" discovery --after "$NEXT_CURSOR"
+node "$BARUA_SKILL/scripts/manage.mjs" discovery-opportunity --id "$OPPORTUNITY_ID"
+```
+
+Use only returned IDs and cursors. Follow `next` until null when inspecting all
+results. For a Play's saved discovery origin, pass `--version` with its
+`opportunityVersion`. This adds `?version=<positive integer>` and reads that
+immutable evidence version with its current stale/adoption status. Never present
+the latest evidence as the original evidence for an older Play revision.
+`--opportunity-id` belongs to the separate private journey-review
+procedure for `play.propose`; it is not a discovery lookup flag.
+
+`status` distinguishes disabled, paused, running and never-run discovery.
+`lastRun.state` is `complete`, `partial` or `failed`; an empty completed review
+is a valid result. A failed or partial read does not establish that no activity
+exists. `nextDueAt` reports when a review may next run. Configuration uses
+`status.version`; each opportunity has its own concurrency `token`.
+
+A partial run with reason `owner_snoozed` is waiting for a known pending
+suggestion's snooze to end; `budget_deferred` means preparation is waiting for
+its allowance. After the snooze ends, the saved work is reconsidered
+automatically under the usual freshness and preparation limits.
+
+An opportunity includes its observation, hypothesis and reason codes; sampled
+coverage and current eligibility; documented remedy with exact confirmed source
+quotes; fixed entry, stop, timing and limit explanations; and any linked
+`attempt` with job, Play and revision IDs. `state` can be `diagnostic`, `blocked`,
+`ready`, `preparing`, `reviewable`, `adopted`, `dismissed`, `snoozed`, `stale` or
+`failed`. A `ready` opportunity is waiting for authoring, while `reviewable`
+has a linked proposal to inspect. Neither state approves it.
+
+Coverage keeps pixel sessions and server occurrences separate. Capped counts
+have `exact: false` and mean at least the returned value. Task-related and
+ordinary samples have different selection rates; their mixture is not a
+population conversion denominator. `eligibility` describes current prerequisites
+within that sample. Its categories can overlap. A recognized mailbox does not
+establish permission. Raw paths and person/session IDs are absent from these
+aggregate responses. Customer drill-down uses the separate `people:read` routes.
+
+Submit changes through `action` with a private JSON input file and a stable
+`--idempotency-key`, then follow the returned operation with `wait`. Bodies use
+the usual `{ "action": "discovery.refresh", "input": { ... } }` envelope:
+
+| Action | Required input | Effect |
+| --- | --- | --- |
+| `discovery.configure` | `expectedVersion`, `enabled`, `paused` | Change discovery settings; never enable pixel execution or sending |
+| `discovery.refresh` | `expectedVersion` | Request a bounded rescan; preserve dismissal and existing attempts |
+| `discovery.dismiss` | `opportunityId`, `expectedToken` | Dismiss this exact suggestion |
+| `discovery.snooze` | `opportunityId`, `expectedToken`, `until` | Snooze until an ISO timestamp |
+| `discovery.replace` | `opportunityId`, `attemptId`, `expectedToken`, `expectedPlayToken`, `expectedCatalogToken` | Explicitly withdraw an unapproved proposal and request a replacement |
+
+For replacement, fetch detail again. A nonnull `replacement` object supplies
+`expectedPlayToken` and `expectedCatalogToken`; copy both exactly, including a
+null Play token. Copy `attempt.id` as `attemptId`, or null when no attempt
+exists. A null `replacement` means replacement is unavailable. Never manufacture
+tokens or replace an adopted Play. After a conflict, read current state and
+reassess the requested change. After an uncertain submission, recover the same
+operation and idempotency key before creating another request.
+
+Refresh shares the automatic review limits: at most one new discovery Play
+authoring chain per workspace per 24 hours. It is not an unlimited model call.
+Read the opportunity again after the operation completes; an accepted refresh
+does not mean evidence or emails are ready.
+Successful discovery operations return a compact `result` of
+`{ "discoveryUpdated": true }`. Fetch `discovery` again for current evidence and
+capabilities; operation history does not retain a copy of the evidence page.
+
+Open the linked Play with `play --play-id`, inspect its exact definition and
+complete email templates, then follow [Propose and operate a Play](#propose-and-operate-a-play).
+Approval still binds the current review token, exact revision and chosen
+languages, with the required reconciliation. Read any discovery origin on the
+selected version; a stale source blocks a pending discovery proposal. After
+adoption, ordinary Play authority remains valid even if that evidence expires.
+Pending discovery proposals do not support Request changes: discard an unwanted
+proposal or use its available replacement action. Adopted Plays support ordinary
+owner changes and language review. Historical evidence cannot create
+fresh runtime events. Approval may admit existing still-fresh eligible events;
+the normal permission and sending gates remain in force.
+
+`results` uses the linked Play's returned window, `sends`, `clicked`,
+`goalMilestone`, `goalMeasured` and `goalReached`. Below 20 measurable outcomes,
+report insufficient measurable outcomes. Unmeasured sends have no known goal
+result. Observed completion does not prove causal lift, and discovery does not
+change an approved Play from these results.
 
 ## Propose and operate a Play
 

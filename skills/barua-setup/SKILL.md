@@ -55,6 +55,8 @@ requires. Full delegation adds no human pause. Produce the current
 runs. Use plain factual prose; name the verified outcome and next action.
 Avoid promotional filler, dramatic fragments, repetitive lists and contrast slogans.
 
+For activity-based suggestions, read [Discovery opportunities](references/management.md#discovery-opportunities) and use `manage.mjs discovery`. Evidence is available before setup approval; the reference covers refresh, dismissal and exact Play approval.
+
 ## Saved segments and one-off campaigns
 
 Before segment or campaign actions, read and follow

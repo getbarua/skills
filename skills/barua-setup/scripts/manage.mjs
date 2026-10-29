@@ -14,16 +14,18 @@ const STATUSES = new Set(['awaiting_approval', 'ready', 'running', 'succeeded', 
 const TERMINAL = new Set(['succeeded', 'satisfied', 'failed', 'cancelled', 'stale']);
 const SECRET_FIELD = /secret|password|authorization|^(?:(?:access|refresh|id|auth|api|bearer)[_-]?)?token$|(?:management|integration|runtime|api)[_-]?key$|^key$/i;
 const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => process.env[name]).filter(Boolean);
-// Only a successful Play detail may expose its optimistic review fingerprint.
+// Only successful Play/discovery reads may expose optimistic review fingerprints.
 // It is not authorization; all other token fields retain credential redaction.
 const reviewSummaries = new WeakSet();
+const discoveryRecords = new WeakSet();
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
           action, resume, cancel, review, wait, proof, review-package, segments, segment, campaigns,
           campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
-          play-feedback, play-paths, people, people-search, person, person-activity, person-events
+          play-feedback, play-paths, discovery, discovery-opportunity,
+          people, people-search, person, person-activity, person-events
 
 BARUA_URL defaults to https://barua.ai. BARUA_MANAGEMENT_KEY authorizes
 management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN and
@@ -40,15 +42,17 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
                          connection ID for recover-key; segment/campaign ID for its read;
                          job ID for campaign-job/play-job; run ID for play-trace;
-                         person ID for person/person-activity/person-events
+                         person ID for person/person-activity/person-events;
+                         opportunity ID for discovery-opportunity
 --session-id <uuid>      session ID from person-activity, required for person-events
 --cursor <cursor>        next_cursor from people/person-activity/person-events
 --limit <n>              people/person-activity/person-events page size, 1..100
 --play-id <slug>         exact Play ID for play and play-* inspection commands
 --revision-id <uuid>     immutable revision for play/definition/validate/simulate/paths
+--version <n>            immutable opportunity version for discovery-opportunity
 --after-version <uuid>   nextVersion from play detail, to read older versions
 --after <cursor>         next cursor from operations, segment/campaign lists,
-                         campaign recipients or Play history pages
+                         campaign recipients, discovery or Play history pages
 --status <status>        play-admissions filter: blocked, admitted, expired, cancelled
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
@@ -75,6 +79,10 @@ key creation into the requested destination. It never grants approval.
 For Play authoring actions, wait follows the saved job until its exact revision
 is ready or preparation fails. An accepted operation alone is not a ready Play.
 play-simulate reads synthetic simulation input from JSON; it sends no email.
+discovery reads status and a page of opportunities. Follow its next cursor with
+--after. discovery-opportunity --id reads one opportunity. These reads contain
+sampled evidence and current readiness; they do not approve a Play. Discovery
+changes use action with the published discovery.* inputs and play:write.
 usage reads the current monthly allowance. play-admissions reads waiting or
 settled starts before a run; it needs customer-read permission. A blocked start
 has no run ID. These commands cannot change an allowance.
@@ -100,7 +108,7 @@ function redact(value) {
   }
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) =>
-    [redact(name), (SECRET_FIELD.test(name) && !(name === 'token' && reviewSummaries.has(value))) || /^event[_-]?id$/i.test(name) || (value.action === 'person.erase' && name === 'input')
+    [redact(name), (SECRET_FIELD.test(name) && !(name === 'token' && (reviewSummaries.has(value) || discoveryRecords.has(value)))) || /^event[_-]?id$/i.test(name) || (value.action === 'person.erase' && name === 'input')
       ? '[REDACTED]' : redact(item)]));
   return value;
 }
@@ -257,16 +265,20 @@ async function main() {
     'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
     'opportunity-id': { type: 'string' }, 'after-version': { type: 'string' },
     'session-id': { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'string' },
+    version: { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
     'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
-    'play-catalog','play-job','people','people-search','person','person-activity','person-events', ...playCommands];
+    'play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events'].includes(command);
+  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
   if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a UUID.');
+  if (args.version !== undefined && (command !== 'discovery-opportunity' || !/^[1-9][0-9]*$/.test(args.version) || !Number.isSafeInteger(Number(args.version)))) {
+    fail('invalid_flag', 'Use --version only with discovery-opportunity and its positive version number.');
+  }
   if (command === 'person-events' ? !UUID.test(args['session-id'] ?? '') : args['session-id'] !== undefined) {
     fail('invalid_flag', 'Provide --session-id only for person-events, using a session UUID.');
   }
@@ -289,7 +301,7 @@ async function main() {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
   }
   const playHistory = ['play-runs','play-trace','play-admissions','play-feedback'].includes(command);
-  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients'].includes(command))
+  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients','discovery'].includes(command))
     || !args.after || args.after.length > (playHistory ? 256 : 2048) || /[\u0000-\u001f\u007f]/.test(args.after))) {
     fail('invalid_flag', 'Use --after only with a list or history page and its returned cursor.');
   }
@@ -481,6 +493,19 @@ async function main() {
       `${prefix}/campaigns/${args.id}/recipients${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     if (command === 'play-catalog') return await finish(await request(`${prefix}/plays/catalog`));
     if (command === 'play-job') return await finish(await request(`${prefix}/plays/jobs/${args.id}`));
+    if (command === 'discovery' || command === 'discovery-opportunity') {
+      const path = command === 'discovery' ? `/discovery${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`
+        : `/discovery/opportunities/${args.id}${args.version === undefined ? '' : `?version=${args.version}`}`;
+      const response = await request(`${prefix}${path}`);
+      if (response.status >= 200 && response.status < 300) {
+        const records = command === 'discovery' ? response.body?.opportunities : [response.body];
+        if (Array.isArray(records)) for (const record of records) {
+          if (record && UUID.test(record.id ?? '') && typeof record.token === 'string'
+            && (command === 'discovery' || record.id === args.id)) discoveryRecords.add(record);
+        }
+      }
+      return await finish(response);
+    }
     if (playCommands.includes(command)) {
       const path = `${prefix}/plays/${args['play-id']}`;
       if (command === 'play') {

@@ -66,6 +66,8 @@ the evidence came from a local fixture or a live check.
 | `play-admissions` | `manage.mjs` | `GET /plays/:id/admissions` | people:read |
 | `play-feedback` | `manage.mjs` | `GET /plays/:id/feedback` | Connection |
 | `play-paths` | `manage.mjs` | `GET /plays/:id/path-counts` | Connection |
+| `discovery` | `manage.mjs` | `GET /discovery` | Connection |
+| `discovery-opportunity` | `manage.mjs` | `GET /discovery/opportunities/:id` | Connection |
 | `people` | `manage.mjs` | `GET /people` | people:read |
 | `people-search` | `manage.mjs` | `POST /people/search` | people:read |
 | `person` | `manage.mjs` | `GET /people/:id` | people:read |
@@ -95,6 +97,12 @@ the evidence came from a local fixture or a live check.
 | `email-raw` | `inspect.mjs` | `GET /emails/:id/raw` | people:read + emails:read |
 
 ## Private inputs and files
+
+Use `manage.mjs discovery` to read discovery status and a page of opportunities.
+Follow `next` with `--after`. Use `discovery-opportunity --id <uuid>` for the
+evidence and readiness behind one proposal. Add `--version <number>` when a
+saved Play revision names an earlier opportunity version. These reads expose
+aggregate evidence, not customer membership. They do not approve a Play.
 
 Supply customer searches and previews as JSON stdin or `--input-file`.
 `people-search` accepts exactly one of `email` and `external_id`.
