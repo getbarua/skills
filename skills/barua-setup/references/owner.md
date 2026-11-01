@@ -52,6 +52,16 @@ preserve existing acceptance; compatible document versions can differ from
 `terms.current`. No new agreement is recorded by this check.
 `terms-accept` takes `{"version":"the reviewed version","digest":"the reviewed digest"}`.
 
+The same website can have separate workspaces, including workspaces with
+different owners. Each starts paused with its own setup and keys. Creation
+does not copy customers or unsubscribe protections. Existing workspaces keep
+their own access and activity. Select the returned workspace ID explicitly;
+a website URL does not identify a single workspace.
+
+Use an invitation to join an existing workspace. Owner-authorized replacement
+is a separate operation that archives the selected old workspace and preserves
+its unsubscribe protections. `workspace-create` does not perform a replacement.
+
 Signup and workspace creation are not automatically retried. After a lost
 response, sign in and inspect `workspaces` before creating again. An admitted
 account survives interrupted setup. Do not delete it to recover setup.
