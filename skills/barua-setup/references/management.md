@@ -501,8 +501,20 @@ procedure for `play.propose`; it is not a discovery lookup flag.
 `status` distinguishes disabled, paused, running and never-run discovery.
 `lastRun.state` is `complete`, `partial` or `failed`; an empty completed review
 is a valid result. A failed or partial read does not establish that no activity
-exists. `nextDueAt` reports when a review may next run. Configuration uses
+exists. `nextDueAt` reports the analysis deadline, not the daily preparation
+schedule. Eligible workspaces receive an initial review, then reviews every
+30 days over the last 30 days of available activity. Routine new activity and
+daily results checks do not advance that deadline. Preparation preserves
+`lastRun` and does not set `running`; frozen author recovery still reports its
+active review. Configuration uses
 `status.version`; each opportunity has its own concurrency `token`.
+
+Initial or requested review preparation waits for monthly history and a clear
+source backlog. After 24 hours it can review partial evidence, with missing
+coverage reported. Sampling covers 31 UTC dates and stays bounded. Raw-data
+retention and current recipient eligibility are unchanged. New review evidence
+expires after 33 days. Source summaries become eligible for bounded cleanup
+after 65 days without updates; erasure can remove them earlier.
 
 A partial run with reason `owner_snoozed` is waiting for a known pending
 suggestion's snooze to end; `budget_deferred` means preparation is waiting for
@@ -532,7 +544,7 @@ the usual `{ "action": "discovery.refresh", "input": { ... } }` envelope:
 | Action | Required input | Effect |
 | --- | --- | --- |
 | `discovery.configure` | `expectedVersion`, `enabled`, `paused` | Change discovery settings; never enable pixel execution or sending |
-| `discovery.refresh` | `expectedVersion` | Request a bounded rescan; preserve dismissal and existing attempts |
+| `discovery.refresh` | `expectedVersion` | Request an earlier bounded review; preserve dismissal and existing attempts |
 | `discovery.dismiss` | `opportunityId`, `expectedToken` | Dismiss this exact suggestion |
 | `discovery.snooze` | `opportunityId`, `expectedToken`, `until` | Snooze until an ISO timestamp |
 | `discovery.replace` | `opportunityId`, `attemptId`, `expectedToken`, `expectedPlayToken`, `expectedCatalogToken` | Explicitly withdraw an unapproved proposal and request a replacement |
@@ -545,8 +557,13 @@ tokens or replace an adopted Play. After a conflict, read current state and
 reassess the requested change. After an uncertain submission, recover the same
 operation and idempotency key before creating another request.
 
-Refresh shares the automatic review limits: at most one new discovery Play
-authoring chain per workspace per 24 hours. It is not an unlimited model call.
+Refresh and changed merchant/approved-plan context can request an earlier
+review. Mapping remains limited to one chain per workspace per rolling
+24 hours, independently of the limit of one new discovery Play authoring chain
+per 24 hours. Owner replacement shares the authoring limit. Saved frozen
+author work resumes without another mapping call. A failed or budget-deferred
+review that made no mapping call waits 24 hours before another automatic
+review; an explicit refresh can request it sooner, subject to model limits.
 Read the opportunity again after the operation completes; an accepted refresh
 does not mean evidence or emails are ready.
 Successful discovery operations return a compact `result` of
