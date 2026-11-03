@@ -401,6 +401,22 @@ an approval checkpoint and a resumed operation. Create a fresh `review-package`,
 read its returned HTML and JSON artifacts, and link both. A saved operation or
 health read does not refresh that package.
 
+### Unsubscribe
+
+Footer links open a confirmation page hosted by Barua. Existing signed links
+remain valid. Opening the link with GET or HEAD does not unsubscribe anyone;
+confirmation requires POST. Email clients can send that POST directly using
+the email's `List-Unsubscribe` URL and `List-Unsubscribe-Post` instruction.
+The signed recipient link authorizes this request; no management key is needed.
+An agent must have the recipient's authorization before submitting it.
+
+A failed or uncertain confirmation can be retried using the same link. Do not
+claim success after an error. Repeating a successful confirmation is safe.
+Unsubscribe blocks marketing for that mailbox in that workspace; defined
+receipts and order updates retain their existing checks. To verify through
+management, read the person's suppression state with `people:read`. An
+unavailable suppression result is unknown, not permission to send.
+
 ### Provider reports
 
 The same read includes `providerMonitoring` with `enabled`, `googleAvailable`,
