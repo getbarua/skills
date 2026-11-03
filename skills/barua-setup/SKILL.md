@@ -25,8 +25,8 @@ needs a new connection, then remove owner credentials from management reads.
 
 For the owner's own account, workspace setup or an exact approval, read
 [owner.md](references/owner.md) and use `scripts/owner.mjs`. It signs in
-without the app and keeps credentials private. Early-access admission still
-applies. Read the current legal documents before supplying an exact acceptance;
+without the app and keeps credentials private. Signup is open without an invite
+code. Read the current legal documents before supplying an exact acceptance;
 never accept terms automatically. Owner access can create or recover the
 management connection used below.
 

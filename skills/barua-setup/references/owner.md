@@ -36,8 +36,8 @@ Run `terms` to read the exact current legal version, digest and document
 paths. Read those documents before accepting. Never insert an acceptance
 automatically because setup needs one.
 
-`signup` remains restricted by early-access admission. Its private JSON takes
-`email`, `password`, `invite` when required, `site_url`, optional `from_name`,
+`signup` is open without an invite code. Its private JSON takes
+`email`, `password`, `site_url`, optional `from_name`,
 `accepted_terms: true`, and your exact `accepted_version` and `accepted_digest`. It requires a new
 `--secret-file` or authorized `--secret-command-file` for the pixel key. The
 helper saves the key before saving its signed-in session.

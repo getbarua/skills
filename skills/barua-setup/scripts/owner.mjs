@@ -390,7 +390,7 @@ async function main() {
       if (session?.access_token) fail('session_exists', 'Log out before replacing an existing signed-in session.');
       let created;
       // Validate auth configuration before admitting an account. The server
-      // alone checks the signup code and records admission and exact terms.
+      // alone records admission and exact terms for a new account.
       await authConfig();
       if (command === 'signup') {
         created = await api('/api/auth/signup', 'POST', body);
