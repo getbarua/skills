@@ -1,39 +1,28 @@
-# Review the customer journey before choosing events
+# Optional customer journey review
 
-Use this procedure for initial setup and changes to events, playbooks or plays.
-It applies to management access and event-only access. Read access and current
-state first; complete this review before proposing or approving a plan.
+Recommend this procedure when the owner wants a broader email strategy. It is
+optional for management access and event-only access. A request for one event
+or an owner sample can follow [the short event path](events.md#start-with-one-event)
+without this artifact. Read access and current state first.
 
-Source discovery and a fresh independent agent review are required before
-onboarding plan or brand submissions. Management Play approvals also
+When the owner chooses this review, complete source discovery and the agreed
+lifecycle and event taxonomy plan before artifact-bound submissions. Use the user's normal review workflow.
+A separate reviewer, model metadata and particular native tools are optional. Management Play approvals also
 require a compact reconciliation record bound to the exact policy and emails.
 That record cannot establish semantic truth or complete source coverage.
 Full delegation continues within its grant, without a new human checkpoint.
 An owner checkpoint presents the artifacts and waits on the existing operation.
 Reading or exporting configuration does not approve it.
 
-Initial setup proposes the complete intended strategy. A message the owner
-names is a requirement to include, unless they explicitly limit the scope.
-For example, a requested welcome email does not exclude recovery or returning
-customer opportunities. Record any actual owner boundary with its source.
+The review covers the agreed strategy. A request for one named message is a
+scope boundary; do not expand it into a complete lifecycle review by default.
+Record the actual owner boundary with its source.
 Choose exclusions for a stated product or priority reason; absence from the
 owner's examples is not a reason.
 
 ## Discover the experience
 
-Before writing the strategy, generate `--render discovery-task` using the
-[task context below](#prepare-the-review-packet-and-task) and start its fresh
-native agent. Pass its prompt unchanged, with the specified model, effort and
-foreground controls. It reads product source only and returns a completed
-checklist. Retain the completed native result. A separate private copy is
-optional; do not transcribe the whole result just to create another file.
-It is advice, not approval, and must not be used as the final reviewer's
-initial context.
-
-Reuse its observed facts as the first-pass source inventory. Verify uncertain
-or missing evidence against the actual product, then map each assessment
-obligation into the strategy. Avoid writing a second independent inventory from
-scratch. Inventory source-owned entities and variants before selecting messages.
+Read the available product sources before drafting. The optional `--render discovery-task` formatter provides a portable checklist for your own agent or a reviewer the user chooses. Verify uncertain facts against actual source and map each material observation to a strategy decision. Inventory source-owned entities and variants before selecting messages.
 Follow state transitions through failure and recovery. Record time conditions
 and existing senders, including the facts that stop their work. Keep source
 observations separate from the later opportunity list. Existing analytics and
@@ -45,6 +34,14 @@ Follow a proposed destination through its access and readiness checks during
 discovery. A fact that work finished does not prove the customer can use it.
 Keep an unknown product choice explicit. Existing sender silence does not
 resolve whether an outcome should be covered, excluded or held.
+
+For payment recovery, follow every transition that can still confirm the old
+transaction, including delayed provider callbacks. A status named `failed`
+does not prove that transaction can no longer succeed. Before proposing a
+new-purchase destination, establish from source how the previous payment is
+permanently closed or how the new attempt cannot create a second purchase.
+Otherwise resume the same saved checkout, or record the missing safe recovery
+route as a dependency. Check this for purchase offers as well as recovery mail.
 
 Use these areas as a discovery checklist, not a requirement to invent features:
 
@@ -70,26 +67,26 @@ source area leaves discovery incomplete; a documented unknown stays visible.
 ## Write the private artifact
 
 Choose an authorized private directory; use the owner's requested location when
-given. Keep `journey-review.json` and `journey-review.md` together there. Start
+given. Keep `journey-review.json` and `journey-review.html` together there. An optional Markdown view remains available. Start
 from `templates/journey-review.json` in the installed skill, also available as
 the [public JSON template](https://barua.ai/skills/barua-setup/templates/journey-review.json). Fill the JSON as
 the inventory, then generate its readable view with the installed helper:
 
 ```sh
 umask 077
-node .agents/skills/barua-setup/scripts/journey-review.mjs --render markdown \
+node .agents/skills/barua-setup/scripts/journey-review.mjs --render html \
   --journey-review-file /private/authorized/journey-review.json \
-  > /private/authorized/journey-review.md
+  > /private/authorized/journey-review.html
 ```
 
 Use your installed skill path and an authorized private directory. The helper
-writes only to stdout; you explicitly save the output. The Markdown filename replaces the JSON suffix
-with `.md` in the same directory. It starts with the recorded decisions, then
+writes only to stdout; you explicitly save the output. The HTML filename replaces the JSON suffix
+with `.html` in the same directory. It starts with the recorded decisions, then
 shows their rules and review records before the detailed source inventory.
 Every recorded field remains visible, including unfinished reviews, held
 decisions and additive metadata. Rendering does not
 certify discovery or approval. Change the JSON and regenerate; do not edit the
-generated Markdown separately. Its exact bytes use LF line endings, no BOM and
+generated HTML separately. Its exact bytes use LF line endings, no BOM and
 one final newline. Each file must fit within 512 KiB and contain no credentials.
 
 Keep the documented fields and types; additive descriptive metadata is allowed.
@@ -100,7 +97,7 @@ message contents. Source references and product facts are sufficient.
 Write consumer rules as concise conditions. Keep supporting explanation in the
 evidence fields. Each covered consumer needs its material conditions in the
 fields that reach the playbook; follow the held-summary rules below for other
-decisions. Render and measure the playbook while drafting, before independent
+decisions. Render and measure the playbook while drafting, before the final
 review; use the command and existing limits below.
 
 Do not overwrite earlier evidence from an onboarding test. For a fresh run,
@@ -123,7 +120,9 @@ the review and must remain unchanged when a row is refined.
 | `journeys` | The discovered situations, including ones that will not get an email |
 | `opportunities` | Explicit message or control decisions for those situations |
 | `coverage_review` | `status` (`unreviewed`, `complete` or `incomplete`), `checked_at`, and `findings` |
-| `independent_review` | The separate reviewer's recorded result and input bindings; null until available |
+| `intended_inputs` | The generated packet with the full event taxonomy, brand input and current content bindings |
+| `event_taxonomy` | Every planned core/custom event with its complete schema, emission source, occurrence identity and consumers |
+| `independent_review` | Optional historical review metadata; never a reviewer identity or tool requirement |
 | `workspace` | `id` and `plan_version` when readable; otherwise null |
 | `reconciliation` | The relationship between selected opportunities and exact current play revisions |
 | `submission_reviews` | The source-based claim review for each exact plan or playbook input |
@@ -144,6 +143,25 @@ A discovered situation with no desired email still needs an explicit exclusion
 or control decision. A list containing only the selected plays is not an
 inventory. Check that every opportunity reference resolves and each
 journey-to-opportunity link is recorded in both directions.
+
+Each `event_taxonomy` row has `name`, `description`, `emit_when`, `event_id`,
+`evidence` (nonempty source references), `properties` (the complete property
+schema object) and `consumers` (opportunity IDs). Include core events as well
+as custom events. For custom events, use exactly the property definitions in
+the intended plan input. Every opportunity's `planned_events` must link back
+to that opportunity in `consumers`. Read core schemas from the authoritative
+event contract; never infer their fields. Explain the exact source commit point
+and stable occurrence ID, even when the emitter still needs implementation.
+Retries reuse an occurrence ID; a later transition is a new occurrence even if
+the object returns to the same state. Object ID plus current status is not
+enough for A → B → A. If the source lacks a durable transition ID or version,
+record that emitter/outbox dependency rather than collapsing distinct facts.
+New `intended_inputs` packets require this full taxonomy before submission.
+Historical packets remain readable with their older schema.
+
+The HTML shows customer situations, the decision mechanics and source-linked
+event schemas. It is the full plan for the owner to open locally, not just a
+repo review or a list of existing emitters.
 
 Each `opportunities` row contains:
 
@@ -220,7 +238,7 @@ consent by relabeling a marketing play. Unknown payment is not a confirmed
 failure; a queue acceptance is not fulfilment; missing tracking is not proof
 that a person did nothing.
 
-## Trace facts through every decision
+## Trace the source-to-consumer contract
 
 Before choosing event definitions, complete these checks against the source
 inventory and all opportunities that use each fact. Record the resulting rules
@@ -232,14 +250,21 @@ observed facts separate from the proposed decision to send a message.
   message's audience filter in that opportunity's eligibility. If an event is
   deliberately narrower than the source fact, every other consumer needs its
   own complete observation. Recheck all consumers whenever a definition changes.
-- Evaluate current state at entry and again before sending. Include relevant
-  activity before the trigger and work that is still unresolved. A stop that
-  only observes later events cannot exclude an already completed action or an
-  existing operation. Name the exact state observation and how it stays current;
-  a missing observation is an implementation dependency, not evidence of absence.
+- Bind the actor, subject and exact obligation or operation occurrence through
+  source relationships and the fields the consumer receives. A prerequisite
+  entitlement or a prior distinct purchase is not settlement of this checkout.
+  Follow payment, job, order and refund joins where relevant; sharing a subject
+  or operation kind does not make two attempts interchangeable.
+- Evaluate current state at entry and again before sending, including relevant
+  purchases, unresolved operations, refunds and review decisions before the
+  trigger. "Nothing since the trigger" is not proof of absence. Name the exact
+  observation and how it stays current. A provider reference is an identifier,
+  not proof of the milestone: use the source's actual state predicate.
 - Follow each proposed action URL through the actual destination and its server
   checks. Record the access and readiness conditions needed for the promised
-  action to work. Preserve the meaning of an upstream completion fact when a
+  action to work, including independent downstream prerequisites. Follow the
+  handler to distinguish resuming a saved transaction from creating a new one;
+  a plausible URL or label proves neither. Preserve an upstream completion fact when a
   downstream prerequisite is missing. Hold that message, use a verified usable
   destination, or propose the missing observation before claiming readiness.
 - Examine time conditions without a new callback. For each relevant deadline
@@ -247,14 +272,80 @@ observed facts separate from the proposed decision to send a message.
   whether a decision is needed and which current-state observation would support
   it. A changed timestamp and an elapsed timestamp are different conditions.
   Retain a justified exclusion or an explicit dependency when no observer exists.
+- Evaluate each message at the exact state that satisfies its trigger. Apply
+  its eligibility and every local or inherited stop literally to that state.
+  A job-ready notification must not cancel itself because that same job is
+  now complete. Name the source entity and concrete states in every stop;
+  generic cross-row rules such as "subject completed or recovered" are not
+  sufficient. Apply shared controls only to the rows and outcomes they govern.
+  Repeat this check at the intended send time and after relevant transitions,
+  including for held rows: a dependency does not repair contradictory rules.
+- Re-evaluate the same operation during retry or recovery. Another job finishing
+  does not resolve this failure, while this job recovering can invalidate its
+  queued failure notice. For queued cancellation, consent or erasure changes,
+  define the pending interval's suppression policy and supported observation.
+  Do not describe queued cross-system work as already effective.
 
 Trace each required observation into the exact event fields or an authoritative
 read the consuming system can actually perform. A proposed read needs a named
-implementation dependency until it exists. Keep material conditions in the
+implementation dependency until it exists. If exact-object or fresh-state
+conditions cannot reach that consumer, mark the affected execution blocked.
+Person-level latest-event approximations are not equivalent; keep the complete
+intended design and continue independently supported work. Keep material conditions in the
 compiled per-Play request, or in the generated playbook for a legacy artifact.
 A source reference or private note cannot replace the rule the message consumer
 receives. Copy facts and usable URLs must also reach the shared playbook or the
 approved copy fields that the email writer actually reads.
+
+## Verify source cases before submission
+
+Apply the contract to concrete cases, not another summary that the plan was
+checked. Start from the source's actual states and variants, then test the
+proposed decision at their boundaries. Include missing independent prerequisites,
+prior distinct operations, recovery and pending control changes where applicable.
+Evaluate exact destinations and actions. A broad journey link does not assess
+each known failure or recovery state. Include every local and shared rule in
+the planned outcome, and pass representative source output through the intended
+event validator, including absent fields the source accepts. Record required
+normalization or observation dependencies before calling a contract supported.
+
+Use safe isolated product tests with synthetic records where available. Never
+exercise payments, email or other side effects in production for this check.
+Otherwise trace the actual source branches and record evidence honestly. A
+missing capability remains an explicit dependency; do not invent a test result.
+
+Generate a starting table with `journey-review.mjs --render source-cases
+--journey-review-file <journey-review.json>`. Complete it under
+`coverage_review.source_cases`, adding distinct cases for relevant variants:
+
+| Fields | Record |
+| --- | --- |
+| `id`, `opportunity_id`, `source_ids` | Distinct case ID, exact decision and all source-inventory facts it uses |
+| `case_kind` | `typical` or `boundary`; every decision needs a meaningful boundary case, including held and excluded work |
+| `source_state`, `intended_action`, `source_preconditions` | Concrete current state, exact destination/action/obligation and its independently required conditions |
+| `method`, `observed_result` | `isolated_test` or `source_trace`; result `{kind,detail}`, with kind `returned`, `rejected`, `state` or `unavailable`, describing what the source actually did or requires |
+| `expected_outcome`, `planned_outcome` | Source-supported `send`, `hold` or `stop`, compared with what the literal intended rules do in that state |
+| `evidence`, `checked_at` | Source locations and local test command/result or branch trace, plus check time |
+| `source_sha256`, `decision_sha256` | Generated bindings to cited facts/revisions and the exact decision with shared controls, owner scope and its event schemas; recheck affected cases before refreshing them |
+
+For example, a finished operation may point to an action that independently
+requires a prepared asset. With that asset absent, record the action's rejection,
+the source-supported hold and whether the literal message rule would still send.
+If it would, correct the rule and repeat the case. Evaluate intended behavior
+as if its implementation existed: `decision: blocked` is not a passing policy
+result and does not repair a false promise in a held row.
+
+Apply each material fact to every linked decision. Add missing consumer links
+when a case exposes them. An `unavailable` result requires a source trace and
+a blocked decision with its precise dependency and next action. Complete known
+branch traces even when execution is unavailable. The helper checks recorded
+coverage, explicit outcome mismatches and current bindings; it does not infer
+semantic truth or execute arbitrary product code.
+
+Save the case table before regenerating `intended_inputs`; its evidence is part
+of the packet digest. New intended-input submissions require this table.
+Historical artifacts remain readable. Use the owner's normal agent and tools;
+there is no reviewer identity, model or native-tool requirement.
 
 ## Check coverage before plan operations
 
@@ -263,11 +354,28 @@ the opportunities already selected. Every material route/state, relevant
 failure/recovery outcome and existing sender must reach a documented decision.
 Check source claims and use applicable counterexamples from this checklist:
 
+- Recovery must open the exact saved object, quote or transaction after signing
+  in on another device. A generic dashboard link does not establish recovery.
+- Actual reading before readiness prevents false unread claims. Readiness
+  separately controls activation and purchase eligibility.
+- Paid, accepted, completed or delivered purchases prevent unwanted repeat
+  purchase offers. Reordering is an explicit customer action.
+- Triggers, waits, inactivity, eligibility, stops, reentry and frequency remain
+  coherent when time passes without another callback.
+- Later unpaid previews, repeat customers and per-object credit applicability
+  remain covered after the first lifecycle completes.
+- Review submitted and skipped are explicit decisions. Opening alone does not
+  establish satisfaction or justify a review reminder.
+- Export requested is not download completed, and payment is not readiness.
 - The customer used a different creation mode or left a different task unfinished.
 - Another object completed while the triggering object still needs attention.
 - Payment remains unresolved after the proposed delay. Elapsed time alone
   does not establish failure or permission to start another purchase.
 - A failed operation returned to pending or processing, or later recovered.
+- An old failed payment succeeds after a new checkout is created and paid.
+  Trace both callbacks and resulting entitlements or jobs. A new-purchase CTA
+  is unsafe unless the old payment is terminal or the source prevents the
+  duplicate; a pre-send check for only paid or processing states is insufficient.
 - Several distinct successful operations accumulate for the same object.
   Check the total and avoid counting retried or unsuccessful operations.
 - An existing sender already sent the same purpose for that occurrence.
@@ -277,13 +385,12 @@ Check that the proposed trigger, subject, eligibility, timing, stops, reentry
 and required context handle those cases. Field presence and valid event JSON
 do not prove this. Compare material facts, including amounts and product
 promises, with the source and with both artifact views. This author check
-prepares the strategy for the required independent review below.
+establishes the source-grounded coverage recorded below.
 
 Set `coverage_review.status` to `complete` only after that pass, with its time
 and any explicit remaining dependencies. An unassessed area or unsupported
 claim leaves it `incomplete`: finish that discovery before proposing or
-approving the intended plan. A complete coverage entry still needs a passing
-independent review before submission. An assessed blocked, excluded or
+approving the intended plan. A complete coverage entry still needs current exact input bindings before submission. An assessed blocked, excluded or
 externally owned row is valid coverage. Hold its affected action or play, while continuing
 unaffected work the grant allows. Do not turn a dependency into a new owner
 checkpoint under full delegation.
@@ -300,7 +407,7 @@ nothing. An uncertain payment does not establish failure. Label proposed
 message rules as proposals and keep unknown product promises out of the input.
 
 Prepare the intended plan input and brand patch. Generate the playbook from
-the recorded strategy before asking the independent reviewer to compare it:
+the recorded strategy before checking the exact inputs:
 
 ```sh
 umask 077
@@ -321,7 +428,7 @@ ownership. Field values and their line boundaries remain intact for email facts,
 links and human review. Blocked and excluded rows begin with an instruction not
 to create a Play; controls and existing sender ownership remain explicit.
 Blocked and excluded rows' complete intended rules remain in the private JSON
-and Markdown. The playbook exports only their outcome, ownership, reason, dependency and next
+and HTML. The playbook exports only their outcome, ownership, reason, dependency and next
 action, with journey and kind labels. Put constraints needed to interpret the
 hold in that summary. If another consumer needs the same fact or condition,
 record it in that consumer's actual rules too; a held row's private rules do not
@@ -333,7 +440,7 @@ from cutting off its end. An oversized result is refused, with both sizes and
 the largest rows. New artifacts use `per_play` so complete message rules do not
 compete for this shared space. Preserve every opportunity and material
 condition; do not drop or merge distinct decisions to fit. Regenerate and measure
-before preparing the review packet, then repeat the independent comparison if
+before preparing the review packet, then check affected consumers if
 inputs changed after review. Nothing is truncated or silently replaced. The
 compiler omits evidence arrays and source revisions, but field
 text can still contain inline citations. Inspect the generated text before
@@ -371,7 +478,7 @@ Use the new template's `authoring_mode: "per_play"` before drafting. Record an
   It does not authorize a Play proposal or approval.
 
 The target is a reviewed declaration, not evidence that the sender or consent
-choice is correct. Independent review compares it with the full source and
+choice is correct. Your agent's review workflow compares it with the full source and
 rules. The helper refuses executable targets on held or control rows and keeps
 exact approval targets in the declared lane.
 
@@ -395,7 +502,8 @@ establish their intended triggers or stops. Adopt only an exact match. For a
 missing supported marketing Play, select its packet entry, remove only the
 `opportunity_id` wrapper field, and add the current `input.expectedToken` from
 `play-catalog`. Keep the other input values and strings unchanged. Calculate the ordinary
-action digest, record the source-based claim review and regenerate Markdown.
+action digest, record the source-based claim review and regenerate the HTML
+from the current JSON. Regenerate Markdown too if you use that optional view.
 Both the local action check and `manage.mjs action` require
 `--journey-review-file <audit.json> --opportunity-id <opportunity-id>`.
 The helper recompiles the request and refuses a mismatch before HTTP.
@@ -428,200 +536,30 @@ node .agents/skills/barua-setup/scripts/journey-review.mjs --render packet \
 The packet contains `strategy_sha256`, `plan_input`, `plan_sha256`,
 `brand_patch`, `brand_patch_sha256`, the generated `playbook` and
 `playbook_sha256`. In `per_play` mode it also contains the exact `play_requests`.
-The reviewer checks each request and target against the linked opportunity and
+Your agent's review workflow checks each request and target against the linked opportunity and
 all applicable controls. Supplying `checklist` also returns `checklist_sha256`.
 
-If your harness supplies `BARUA_SETUP_REVIEW_CONTEXT_FILE`, use that private
-context file unchanged as the task formatter's `--input-file`. It contains the
-trusted owner request, complete frozen source paths, canonical artifact paths
-and configured model/effort. Write the strategy and packet at its supplied
-paths. Do not shorten its owner request, remove source files or replace its
-settings. This is nonsecret task metadata, not model authentication. The local
-evaluation retains both expected tasks before author execution and checks
-completed source-only discovery followed by a distinct fresh final reviewer.
-Editing the context file cannot change those expectations.
+Save the complete packet as `intended_inputs` in the journey JSON. Its hashes bind source revisions, lifecycle decisions, full event definitions and brand content. Do not store the packet as a different author's claim. Historical `independent_review` input packets remain readable; reviewer identities and native tool records are not submission requirements.
 
-Without supplied harness context, create a private task context JSON with
-exactly these fields:
+Regenerate the HTML after recording the packet. Before the first plan proposal, the locally openable HTML must show the full lifecycle and complete event taxonomy, including emission sources, properties, identifiers and consuming opportunities. The exact generated HTML and JSON must match. An unfinished source review cannot be hidden by a complete-looking artifact.
 
-| Field | Value |
-|---|---|
-| `owner_request` | The owner's actual request, without the author's strategy or conclusions. |
-| `source_files` | An array of product source file paths for independent discovery. |
-| `strategy_file` | The path to the complete `journey-review.json`. |
-| `packet_file` | The path to the generated review packet. |
-| `model`, `effort` | The harness-reported model ID and configured effort, using `BARUA_SETUP_MODEL` and `BARUA_SETUP_EFFORT` when supplied. |
+Optional task formatters accept `owner_request`, `source_files`, `strategy_file` and `packet_file`, and return a `prompt`. Use available read-only tools; they do not launch a model or require delegation. Model and effort fields in old context files are tolerated but not required or emitted.
 
-Use absolute paths that the reviewer can read. Generate early discovery from
-the installed [discovery task](https://barua.ai/skills/barua-setup/templates/journey-discovery-task.md), before
-the strategy and packet exist. It exposes only the owner request, source paths
-and configured metadata. Generate the final task from the installed
-[reviewer task](https://barua.ai/skills/barua-setup/templates/journey-review-task.md) once the packet exists.
-It also reads the shipped [event contract](events.md) after its own source-first
-checklist. Normal installation includes both templates and the contract.
-For manual downloads preserve their paths relative to the helper:
+## Bind and submit the current inputs
+
+Check the actual action against source and record its exact `submissionHash` in `submission_reviews`, with status `complete`, `checked_at`, and claims. Each claim has `text`, `status` (`observed`, `proposed` or `unknown`), `disposition` (`included` or `omitted`) and `evidence`. Observed claims need source evidence; unknown claims must be omitted. Regenerate the HTML after this record.
 
 ```sh
-node .agents/skills/barua-setup/scripts/journey-review.mjs --render discovery-task \
-  --input-file /private/authorized/reviewer-context.json \
-  > /private/authorized/discovery-task.json
-
-node .agents/skills/barua-setup/scripts/journey-review.mjs --render reviewer-task \
-  --input-file /private/authorized/reviewer-context.json \
-  > /private/authorized/reviewer-task.json
+node .agents/skills/barua-setup/scripts/journey-review.mjs \
+  --input-file /private/authorized/action.json \
+  --journey-review-file /private/authorized/journey-review.json
 ```
 
-The result has `prompt`, `expected_model` and `native_call`. Pass `prompt`
-unchanged to native delegation. In the verified `native_call` shape,
-`subagent_type` is `general-purpose`, `effort` is the configured value, and
-`run_in_background` is `false`. Apply these requirements using the
-corresponding controls your native harness supports; do not invent arguments or
-silently change a setting. Record `expected_model` verbatim as the configured
-model declaration. The harness must verify the completed reviewer's actual
-resolved model from native runtime evidence; that metadata may be retained
-outside the tool text shown to the author. Never append an explanation to the
-model string. If neither visible evidence nor a trusted harness verifier can
-establish the actual model, report that limit and hold the affected submission.
-Task generation only formats instructions. It does not start a reviewer or
-supply model authentication.
+The helper checks complete discovery and coverage, the current input packet, matching HTML and exact action claims. It does not certify that source was read or that an email was delivered. Plan approval also reads the current proposed/approved definition and version; Play approval reconciles the exact revision, policy and requested language previews. Owner approval and grant restrictions remain in force.
 
-## Obtain the independent review
+The strategy digest excludes operational progress fields: `captured_at`, `discovery_review`, `coverage_review`, `workspace`, `reconciliation`, `approval_observations`, `submission_reviews`, `intended_inputs` and optional `independent_review`. All other fields, including additions and source revisions, are bound. A correction requires checking every affected consumer, regenerating the input packet and HTML, and recording the new exact action. It does not require a fresh independent reviewer.
 
-Use your agent harness's native delegation to start a separate reviewer with
-fresh context and the same configured model and effort. Verify that this
-capability is available; the skill does not install a reviewer or supply model
-authentication. Do not inherit the author's strategy or conclusions into the
-reviewer's initial context. Keep the reviewer read-only, without workspace
-credentials, customer records or permission to change product files or Barua.
-
-Start a fresh final task, separate from the discovery agent, with the generated
-prompt and call requirements. Do not resume a previously used reviewer or
-inherit the author's conversation or early discovery. Keep the prompt intact,
-including its direct `Read`, `Grep` and
-`Glob` restrictions; do not replace them with shell commands. Wait for the
-completed foreground result before submitting. A started task or progress
-message is not a completed review.
-
-The canonical task requires a source-derived plain JSON checklist before any
-artifact reads, then comparison of the complete strategy and intended inputs.
-The reviewer emits the checklist as an intermediate text block and immediately
-follows it with the event-contract `Read` in the same response. Returning the
-checklist ends the native task before comparison; it is an incomplete review.
-Only the final judgment completes the task.
-For this recorded protocol, the reviewer must use `Read` on `strategy_file`,
-the actual journey JSON. Its matching generated Markdown remains the full
-human-readable view. The final result uses the task's exact top-level receipt
-fields; do not add `CHECKLIST` or `RESULT` labels, a nested `bindings` object,
-or a prose reconstruction. Retain the ordered native tool/session evidence and
-both JSON outputs. The parent may attach only harness-reported `author` and
-`reviewer` identity, `checked_at` and the calculated `checklist_sha256`. Preserve
-the reviewer's remaining result, including findings and input bindings.
-
-Retain the reviewer's result. For strategy corrections against unchanged product
-sources, prepare the current packet and start another fresh final reviewer
-with the same canonical task. Each independently derives its source checklist;
-do not supply a previous review's conclusions as its starting point. Keep every
-failed result. Material source changes require fresh early discovery too. If the
-required independent review is unavailable or cannot finish, keep the affected
-strategy submissions on hold and report that limit. Continue unaffected work
-permitted by the grant.
-Do not substitute self-review, add a human checkpoint, request another model
-account or silently start a nested CLI/API call. The owner may still choose a
-human checkpoint through the existing permission policy.
-
-The local helper checks recorded review fields and content bindings. It does
-not inspect the source tree, verify that another agent ran, or certify the
-reviewer's conclusions. Preserve the actual delegation/session evidence for
-those execution claims. Recheck current source before submitting; record
-relevant uncommitted changes with content hashes in source metadata rather than
-reusing a commit identifier for different content.
-
-Use the author session ID and reviewer agent/session ID reported by the
-harness, with its exact configured model and effort declarations and retained
-runtime verification. When supplied by the
-harness, `BARUA_SETUP_SESSION_ID` identifies the author session; it is not a
-credential. The harness may also supply `BARUA_SETUP_MODEL` and
-`BARUA_SETUP_EFFORT`; use those or its reported equivalents without asking the
-owner to configure new values. Do not invent identifiers, substitute an
-unverified alias or put a visibility caveat inside an identity field.
-If the harness cannot supply the required identity, report that the review
-cannot be recorded yet.
-
-## Bind and submit the reviewed inputs
-
-Once the reviewer has emitted its initial checklist, the packet command can
-calculate its digest without changing the other packet fields. Keep the
-reviewer's original expectations and evidence unchanged.
-Record the passing result in `independent_review` only after all material
-findings are resolved:
-
-| Field | Required content |
-|---|---|
-| `version`, `status`, `checked_at` | `1`, `pass` and an ISO review time with a timezone. |
-| `author`, `reviewer` | Each has `session_id`, `harness`, `model` and `effort`. Sessions must be distinct; use the configured model and effort. |
-| `strategy_sha256` | The packet's strategy digest, including recorded sources and all semantic fields. |
-| `plan_input`, `plan_sha256` | The exact reviewed event proposal and its packet digest. |
-| `brand_patch`, `brand_patch_sha256` | The exact reviewed brand patch and its packet digest. |
-| `playbook_sha256` | The packet's generated playbook digest. |
-| `checklist_sha256`, `checklist` | The final reviewer's source-first digest and rows with `id`, `current`, `expected`, `prerequisites`, nonempty source `evidence`, linked `opportunity_ids` and `verdict: "pass"`. The digest covers every field except the comparison's opportunity links and verdicts. Existing three-field discovery digests remain readable. |
-| `counterexamples` | Rows with `id`, `scenario`, `expected`, source-backed `result`, nonempty source `evidence`, linked `opportunity_ids` and `verdict: "pass"`. |
-| `findings` | An empty array for a passing result. Retain earlier findings separately rather than deleting the failed review evidence. |
-
-Both row lists must be nonempty, with distinct IDs and valid opportunity links.
-The completed checklist must cover every opportunity, including held and
-excluded decisions.
-
-Changes to source evidence, intended rules, the plan, brand patch or generated
-playbook require another independent comparison. The strategy digest omits only
-top-level `captured_at`, `discovery_review`, `coverage_review`, `workspace`,
-`reconciliation`, `approval_observations`, `submission_reviews` and
-`independent_review`. All other fields, including additions and recorded source
-revisions, remain bound. Updating only those operational records does not
-require another semantic review. Brand version/checkpoint fields
-`expectedVersion`, `proposalHash` and `seen` are outside the independent
-semantic binding; the exact action review below still binds their current
-values. Other brand input fields are refused as unreviewed.
-
-Save the exact `{action,input}` JSON and calculate its digest with
-`node <skill dir>/scripts/journey-review.mjs --input-file <action.json>`.
-Add a `submission_reviews` row with `action`, `input_sha256`, `status` set to
-`complete`, `checked_at` and `claims`. Each claim has `text`, `status`,
-`evidence` and `disposition`. Status is `observed`, `proposed` or `unknown`;
-disposition is `included` or `omitted`. Observations need source references.
-Unknown claims must be omitted. Review the exact playbook prose as well as
-the intended message actions; a digest only binds the input you checked.
-Then regenerate the Markdown to include this submission review. The order is
-packet and playbook render, independent source-first checklist and comparison,
-action construction, action digest and claim review, Markdown render, then
-submission. Playbook rendering never reads submission reviews, reconciliation,
-approval observations, independent review or workspace metadata, so recording a
-digest cannot change the input it binds.
-
-For onboarding plan proposal, plan approval and playbook actions, pass
-`--journey-review-file` to `manage.mjs action`. Before HTTP it checks the current
-generated Markdown and recorded independent review with matching inputs.
-Brand actions also require the exact generated playbook before the input digest
-and claims are checked. The helper reads both
-files as bounded regular files without following a file symlink; it never
-writes or repairs them during submission.
-Plan approval also reads the current server plan and compares its full
-normalized definitions and declarations with the reviewed `plan_input`; event
-names alone do not establish a match. An already approved plan is accepted for
-retry only when there is no current proposal and its version matches both the
-requested version and the workspace's plan version. A newer proposal requires
-review of that proposal. After a successful proposal, record its returned
-version in `workspace.plan_version` before requesting approval. This records
-the selected plan version; it does not claim the plan is already approved.
-Keep the artifact and request unchanged during a
-same-key retry; refreshed operational inputs need their own exact action review.
-For event-only access, use the local `journey-review.mjs` command with both
-file flags to check the same wrapper and current Markdown, then submit the plan through the usual
-integration API. Send only the plan input there, without the local wrapper.
-Direct plan and brand APIs do not certify source coverage. Unrelated ongoing
-brand settings changes keep their normal API path. Event-only brand token
-proposals still need source-grounded independent review, but this helper does
-not validate the `PUT /brand` wire body; preserve its existing source-token
-contract.
+The action hash still includes optimistic concurrency values such as `expectedVersion`, `proposalHash` and `seen`. Changing those requires a fresh exact submission record even when the underlying plan is unchanged. Event-only submissions follow these same local checks before their HTTP call.
 
 ## Carry the intent into actual plays
 
@@ -685,7 +623,7 @@ canonical observation; do not relabel an unrelated display policy.
 Older artifacts remain readable. Add the new observations before a new approval.
 
 Use `manage.mjs action --journey-review-file <journey-review.json>` with the
-exact approval input and the current generated Markdown sibling. The helper
+exact approval input and the current generated HTML sibling. The helper
 rechecks the canonical target and renders
 every requested step/language example. Missing renders or lint failures stop
 submission. These checks do not replace your copy and policy review or write
@@ -720,14 +658,21 @@ replacement does not itself prove live delivery.
 Refresh affected rows when product facts, scope, the event plan, play versions
 or sending ownership change. Read current versions before resuming approval.
 Before any final handoff, update the observed workspace plan version and
-reconciliation rows, then use `--render markdown` to regenerate that view.
+reconciliation rows, then use `--render html` to regenerate the browser artifact
+from the current JSON. Use `--render markdown` too if you keep that optional view.
+Then run `journey-review.mjs --check-final --journey-review-file
+<journey-review.json>`. It checks current coverage, inputs and the actual HTML
+without making a request. A printed digest alone is not validation. Keep
+operation logs/package notes separate or in the documented observational fields;
+arbitrary new top-level metadata changes the strategy digest. If inputs changed,
+regenerate the current packet and HTML, then repeat the check.
 Do this for an incomplete run too. Keep the original source observation time
 distinct from later checks.
 An old approval cannot retrospectively establish that journey coverage was
 reviewed. Do not automatically revoke approvals or pause existing sending;
 use the owner's requested scope and current grant.
 
-Link the current `journey-review.md` and `journey-review.json` beside the
+Link the current `journey-review.html` and `journey-review.json` beside the
 [observed review package](review-package.md), or the event-only proposal.
 The journey artifact includes planned and missing work; the package contains
 what Barua actually stores. Read both before reporting completion.

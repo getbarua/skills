@@ -361,7 +361,7 @@ Every error from `/api/integrations/v1` has the body `{"code": "...", "message":
 
 ## Custom events
 
-For a moment only your product has, such as a report export, propose custom events with `POST /api/integrations/v1/plan`. Send the full set every time: an approved event you leave out is removed once the new version is approved. Use `not_emitted` for each declarable core event your product has no source for.
+Barua accepts your own named events and typed properties. Order events are built-in examples, not the full event catalog. For a moment only your product has, such as a report export, propose custom events with `POST /api/integrations/v1/plan`, or `plan.propose` with management access. Send the full set every time: an approved event you leave out is removed once the new version is approved. Use `not_emitted` for each declarable core event your product has no source for.
 
 ```json
 {
@@ -393,6 +393,56 @@ For a moment only your product has, such as a report export, propose custom even
 <!-- /docs-check:plan-rules -->
 
 A new proposal answers 201 with a `needs_human` object, `{step, url, why, resume}`. Give the workspace owner `url` and `why`, then follow `resume`. Barua accepts a custom event only after the owner or an authorized agent approves the version that defines it. Until then it arrives as `unknown_event`, and verify lists it under `awaiting_approval`. Sending the same plan again is safe: it answers 200 with the same version. When it matches the approved plan, the answer is `"status": "approved"` with `needs_human: null`, which means nothing changed.
+
+### Start with one event
+
+Use this path when the owner names a specific event, including in a new workspace.
+Recommend a broader setup review once; it is optional. Do not start full journey
+planning, campaigns, pixel setup or history imports to complete this task.
+
+1. Read the current plan before editing it. With management access, use
+   `node "$BARUA_SKILL/scripts/inspect.mjs" plan` after the capabilities/workspace
+   check in [quickstart.md](https://barua.ai/skills/barua-setup/references/quickstart.md). With event-only access, verify the
+   test key first and read `GET /api/integrations/v1/plan`. A restricted event
+   key cannot change the plan; use granted management access or retain that
+   exact owner step. Preserve every approved event and `not_emitted`
+   declaration. If a different proposal is pending, reconcile it with its owner
+   before replacing it. A failed read is not an empty plan.
+2. Trace the requested fact to its server commit point. Check its actual
+   recipient identity and occurrence ID, the properties needed by the email,
+   and any existing sender that could duplicate it. Use the schema example
+   above as a shape, not data to emit. Add the requested definition to the
+   existing full plan. With management access, put `action: "plan.propose"`
+   and the complete plan as `input` in a private JSON file, then submit it
+   through `manage.mjs action --idempotency-key <stable-request-id> --input-file <plan.json>`.
+   No `--journey-review-file` is required. Read the returned version
+   and compare the proposal with the intended change before `plan.approve`.
+   Follow the current owner checkpoint and resume its exact operation.
+3. Install or update only the relevant emitter, following
+   [the server delivery rules](https://barua.ai/skills/barua-setup/references/reading-repos.md#backend). Send the event through
+   the product's real code with a test key. Inspect its receipt and run
+   `verify.mjs --since <start-time>`. Fix failures for the requested event.
+   The verifier reports the whole workspace: missing unrelated events or setup
+   steps may remain. Preserve its exit code and report the scoped result
+   separately; do not manufacture other events or call full setup complete.
+4. If the owner asked for an email test, use the
+   [owner sample](https://barua.ai/skills/barua-setup/references/quickstart.md#offer-the-owner-sample-early). It can happen
+   before these event steps. A test event validates data and sends no email.
+   An owner sample checks the rendered message and its delivery independently;
+   it does not prove that the custom event triggered a Play.
+
+Stop at the requested outcome. Report the event name, saved plan version and
+its status, emitter check or receipt result, and sample status when requested.
+Include only relevant pending owner operations and the sample preview if made.
+A full review package and journey HTML/JSON are optional for this path. Existing
+workspace readiness does not have to reach zero remaining steps.
+
+For customer automation, continue with [the Play contract](management.md#propose-and-operate-a-play)
+only when requested. Custom-event Plays currently use the person's latest
+occurrence and marketing rules. They do not guarantee one email per occurrence.
+The fixed receipt and order-update Plays have separate service-email behavior.
+Custom strings are at most 500 characters; use a short summary and a URL for a
+long report. Check these constraints before promising a meeting-recap workflow.
 
 ## Check what arrived
 
@@ -490,7 +540,7 @@ snapshot can omit a step that is now ready.
    sending steps that may become ready while you write the reply. They are
    not ready in the captured response and grant no permission to act.
 3. Put the full handoff block in the **final chat reply** as a text code block,
-   followed by clickable private review-artifact and journey Markdown/JSON links. Keep this block in
+   followed by the private review artifact and, if selected, journey HTML/JSON links. Keep this block in
    chat even when the linked artifact also contains it. State the verified
    result and remaining work briefly around the block; preserve its exact lines
    when shortening the reply.

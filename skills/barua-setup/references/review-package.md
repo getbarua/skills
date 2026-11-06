@@ -1,11 +1,13 @@
 # A reviewable setup proposal
 
-Give the owner a readable proposal alongside the implementation PR and final
+Use this package for a full setup handoff or when the owner requests a report.
+A narrow event or owner-sample task follows the [scoped handoff](management.md#finish-and-hand-off)
+without this package. Give the owner a readable proposal alongside the implementation PR and final
 handoff. They should be able to judge which product facts become events, who
 receives each play, and what the proposed emails say.
 
-First complete [journey-review.md](journey-review.md), before proposing the
-event plan. Its private Markdown and JSON files record the intended experience,
+When the owner chooses the optional [journey review](journey-review.md), complete
+it before artifact-bound submissions. Its private HTML and JSON files record the intended experience,
 including missing implementation, external senders and deliberate exclusions.
 Keep them beside this report in the handoff. The exported package describes
 stored configuration; it cannot establish that the strategy covers the product.
@@ -170,8 +172,8 @@ approval receipt.
 
 ## Event-only access
 
-With only `BARUA_API_KEY`, complete the same journey review before submitting
-the plan, then create a private `event-plan.md` using the integration API's
+With only `BARUA_API_KEY`, create a private `event-plan.md` for a full setup
+handoff using the integration API's
 plan contract and the repo evidence already gathered by the setup skill.
 Cover each relevant core and custom event: meaning, exact server trigger,
 properties, rationale, implementation/check status, and omissions or assumptions.
@@ -182,7 +184,7 @@ State that proposed plays, their email previews and management launch facts are
 unreadable with this access. Report any integration setup facts you can read
 with their actual scope. Continue authorized emitter work. Do not request a
 management key solely to create this artifact, and do not invent previews.
-Link the intended journey Markdown/JSON beside the event proposal; mark actual
+Link journey HTML/JSON when the optional review was selected; mark actual
 play reconciliation unavailable with this access.
 
 ## Errors and privacy

@@ -8,11 +8,9 @@ metadata:
 
 # Barua setup
 
-Use Barua for lifecycle email and one-off campaigns. Follow the access path below,
-then the required journey review before selecting events or plays.
+Use Barua for custom-event email, lifecycle Plays and one-off campaigns. Match the work to the owner's request. A single event or an owner test email is a valid starting point.
 Read this whole file and each required branch reference. If a tool truncates
-output, read the missing ranges until complete. A heading or clipped-line preview
-does not replace the full instructions.
+output, read the missing ranges until complete. A heading or clipped-line preview does not replace the full instructions.
 
 ## Choose your access path
 
@@ -46,16 +44,23 @@ have recorded test and live modes. For a missing management key, follow
 [Recover a lost management key](references/management.md#recover-a-lost-management-key);
 preserve the existing connection.
 
-For both paths, read and complete [journey-review.md](references/journey-review.md):
-native source discovery before drafting, then a separate fresh independent review
-before any onboarding plan proposal, approval or brand submission. Retain the
-complete journey artifacts and reconcile exact Play revisions as that procedure
-requires. Full delegation adds no human pause. Produce the current
-[review package](references/review-package.md) for the handoff, including incomplete
-runs. Use plain factual prose; name the verified outcome and next action.
-Avoid promotional filler, dramatic fragments, repetitive lists and contrast slogans.
+For one specific event, follow [Start with one event](references/events.md#start-with-one-event).
+For an owner test email, follow [quickstart.md](references/quickstart.md#offer-the-owner-sample-early).
+These paths also apply to a new workspace. Do not require the full setup steps below, a journey artifact or an independent reviewer. Stop at the requested outcome.
+
+Recommend a broader setup review once, but keep it optional. When the owner chooses it, follow [journey-review.md](references/journey-review.md) and keep its HTML/JSON artifacts and exact input bindings current. Use the user's normal agent review workflow.
+Exact Play approval still needs its compact reconciliation record; a full-product journey map is optional. Preserve the current grant and owner checkpoints. Full delegation adds no human pause.
+
+Use plain factual prose in every handoff. Name the verified outcome and next
+action. Avoid promotional filler, dramatic fragments and contrast slogans.
 
 For activity-based suggestions, read [Discovery opportunities](references/management.md#discovery-opportunities) and use `manage.mjs discovery`. Evidence is available before setup approval; the reference covers refresh, dismissal and exact Play approval.
+
+## Start with the agent
+
+Follow [quickstart.md](references/quickstart.md) first: management access, exact workspace verification, private handoff and the early owner-only sample. Discover external access separately; the Barua grant does not supply it.
+Give brief progress updates. Discuss the optional pixel and existing users/history only when relevant to the requested work. Preserve consent and non-sending imports; never silently replace an installed pixel key.
+The agent leads all work after the browser handoff. Campaign and segment preparation can proceed independently of event rollout. Sample sending requires explicit `test:send`; customer sending keeps its separate approval.
 
 ## Saved segments and one-off campaigns
 
@@ -80,17 +85,12 @@ Without flags it asks which agents to install for. For one agent without prompts
 npx skills add getbarua/skills --skill barua-setup -a claude-code -y
 ```
 
+If the installer is unavailable, fetch the complete public skill folder and its relative dependencies from the published repository, or copy an existing installation. Do not repair global npm permissions or request a particular model account for setup. Read this SKILL.md and its referenced branches directly when native skill loading is unavailable.
+
 Or copy this folder to `.claude/skills/barua-setup/` for Claude Code, or to `.agents/skills/barua-setup/` for Codex.
-Install the whole folder: `review-package` needs `scripts/review-package.mjs` beside `scripts/manage.mjs`.
-Owner access needs `scripts/owner-storage.mjs` beside `scripts/owner.mjs`.
-Both owner and management helpers need `scripts/private-input.mjs` beside them.
-For headless customer, segment, email and diagnostic reads, use
-[inspection.md](references/inspection.md). `scripts/inspect.mjs` needs
-`scripts/inspect-output.mjs`, `scripts/owner-storage.mjs` and
-`scripts/private-input.mjs` beside it.
-It saves email previews privately without loading tracking or unsubscribe links.
-The task formatters need [`templates/journey-discovery-task.md`](templates/journey-discovery-task.md) and [`templates/journey-review-task.md`](templates/journey-review-task.md); final review reads [`references/events.md`](references/events.md) after its own source-first checklist.
-When downloading helpers manually, preserve all three relative paths beside the `scripts` directory.
+Install the whole folder. `manage.mjs` needs `review-package.mjs`; `owner.mjs` needs `owner-storage.mjs`; both need `private-input.mjs`. Keep every relative dependency beside its caller.
+For customer and email reads, follow [inspection.md](references/inspection.md). `inspect.mjs` needs `inspect-output.mjs`, `owner-storage.mjs` and `private-input.mjs`; it saves previews privately without loading tracking or unsubscribe links.
+The optional task formatters need [`templates/journey-discovery-task.md`](templates/journey-discovery-task.md), [`templates/journey-review-task.md`](templates/journey-review-task.md) and [`references/events.md`](references/events.md). Preserve their relative paths.
 
 ## Before you start
 
@@ -107,7 +107,7 @@ Every step is safe to run again on a repo an earlier run set up. Change what tha
 
 1. Check the key before any other call to Barua: run `node <skill dir>/scripts/verify.mjs` with no flags, where `<skill dir>` is this skill's folder. It only reads. If it exits 2, stop: there is no test key to use, and every later step would act with a live key. On exit 1, fix what `error` says and run it again. Any other exit means a test key. If the key changes during the run, start again here.
 2. Read the contract: `GET /api/integrations/v1/plan`. It lists the core events (`signed_up` is required), any approved custom events, each event's `id_from`, and a JSON Schema for one event.
-3. Read every repo the owner named, as `references/reading-repos.md` describes. Complete and review the journey artifacts required by `references/journey-review.md` before step 4. For the supporting core and custom facts, find where each becomes true and record missing instrumentation as work to implement. Record frontend actions without a server request using the handoff helper's local receipt format, including their source and suggested endpoint.
+3. Read the relevant product sources as `references/reading-repos.md` describes. If the owner chose the broader setup review, complete its journey artifacts before step 4. For the supporting core and custom facts, find where each becomes true and record missing instrumentation as work to implement. Record frontend actions without a server request using the handoff helper's local receipt format, including their source and suggested endpoint.
 4. Propose the plan with `POST /api/integrations/v1/plan` on every run, reruns included. Send the full plan: every custom event the product needs, and a `not_emitted` entry with a reason for each declarable core event the product has no source for (`GET /plan` marks those `declarable`). An approved event or declaration you leave out is removed, so send `"events": []` when the product needs none. The optional `consent_updated` stays out of the plan when the product has no source for it, and goes in the report instead. Always propose even when both arrays are empty: a core-only product still needs an approved plan. Barua compares the plan with the approved one, and `"status": "approved"` means nothing changed. Otherwise create the readable event-plan artifact from `references/review-package.md` and show it with the answer's `needs_human` `url` and `why`, then keep building while the owner approves.
 5. Write the emitter. Copy `references/emit.ts` into the backend (as `emit.mjs` with the types removed, for plain JavaScript), or write the plain HTTP call from `references/events.md` for another stack. Add an emit call at each commit point. If the product deletes accounts, read the user's email before the delete, and in the same transaction write an erase job that keeps the user's id and that email. The job calls `POST /api/integrations/v1/people/erase` twice, with the id as `external_id` and then with the `email`, because the address Barua holds for the id can be an old one when the email changed. It retries each call until it answers 200 with `"erased": true`, the way `references/events.md` says under "Erase a person", which also covers a delete your database doesn't run and a product with no job queue.
 6. Check it. Step 1 found a test key, so note the current time (`date -u +%Y-%m-%dT%H:%M:%SZ`) and trigger each flow through the product's real code, such as its test suite or a local run. Then run `node <skill dir>/scripts/verify.mjs --since <that time>`. Fix what it lists and run it again, as the exit codes below say, until it exits 0 or 4. verify checks the key on every run, so a key that turns live ends the loop at exit 2 before the next flows. For a queue or outbox, also hold delivery at a local test endpoint while exercising a product request: the request must complete with its event saved before delivery resumes. Check a concurrent request too, to catch a worker holding the product's database lock during HTTP.
@@ -201,6 +201,6 @@ needs_human: confirm_brand https://barua.ai/app/#/w/<workspace id>/settings/setu
 - `pending_owner_step: <step> <url>` lines preserve future email work from older servers without `upcoming`. They are not permission to act or proof of enabled sending. If the helper needs a current workspace link, refresh setup every 30 seconds for up to 10 minutes and rerun its report when review is ready. If it still cannot produce the report, say email setup remains pending; an empty action list does not establish completion.
 - `needs_human: linked_file <file> → <target>` for each file you left alone because it's a symlink (`readlink <file>` shows the target), with what you would have written there, so the owner can add it by hand.
 
-Include `review_artifact: <private artifact link>` in the handoff and implementation PR. For management access, link `index.html` and its `review.json` snapshot; for event-only access, link the event-plan Markdown. State any unreadable sections or failed collection. Keep the files private and do not commit or publicly host them by default.
+For a full setup handoff, include `review_artifact: <private artifact link>` in the handoff and implementation PR. For management access, link `index.html` and its `review.json` snapshot; for event-only access, link the event-plan Markdown. A narrow task uses the scoped handoff in [Start with one event](references/events.md#start-with-one-event). State any unreadable sections or failed collection. Keep the files private and do not commit or publicly host them by default.
 
 For management access, also report the connection label, completed operation IDs, any exact operation awaiting review, the deployed key's ID (never its secret), and delivery proof ID/status. Distinguish emitter validation, deployed traffic, provider acceptance and confirmed delivery. Describe external work that lacks an authorized tool without calling the entire setup blocked.

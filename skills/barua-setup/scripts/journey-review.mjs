@@ -253,6 +253,52 @@ export function renderMarkdown(review) {
   return output;
 }
 
+// No remote assets, script, HTML interpolation, or browser-dependent Markdown
+// parser. The complete JSON remains the source; this projection is offline.
+export function renderHtml(review) {
+  const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+  function content(value, depth = 2) {
+    if (Array.isArray(value)) return value.length
+      ? `<ol>${value.map(item => `<li>${content(item, depth + 1)}</li>`).join('')}</ol>` : '<p>Not recorded</p>';
+    if (object(value)) return Object.entries(value).map(([key, item]) => `<section><h${Math.min(depth, 6)}>${escape(label(key))}</h${Math.min(depth, 6)}>${content(item, depth + 1)}</section>`).join('');
+    return `<p>${escape(recorded(value))}</p>`;
+  }
+  // Cards already show these nonempty scalar/list values. Keep every other
+  // field here, including null/false/zero and unexpected additive structures.
+  const remaining = (row, shown) => Object.fromEntries(Object.entries(row).filter(([key, value]) =>
+    !shown.includes(key) || !(text(value) || (Array.isArray(value) && value.length && value.every(item => typeof item === 'string')))));
+  const details = (row, shown) => {
+    const rest = remaining(row, shown);
+    return Object.keys(rest).length ? `<details><summary>Supporting details</summary>${content(rest, 4)}</details>` : '';
+  };
+  const values = object(review) ? review : {};
+  const journeys = Array.isArray(values.journeys) ? values.journeys.map(row =>
+    `<article><h3>${escape(row.id ?? 'Journey')}</h3><p>${escape(row.situation ?? 'Not recorded')}</p>${row.notes ? `<p>${escape(row.notes)}</p>` : ''}<p class="muted">Related decisions: ${escape((row.opportunity_ids ?? []).join(', ') || 'Not recorded')}</p>${details(row, ['id', 'situation', 'notes', 'opportunity_ids'])}</article>`).join('') : '<p>No journeys recorded yet.</p>';
+  const mechanics = ['trigger', 'actor', 'subject', 'eligibility', 'timing', 'stops', 'reentry', 'duplicate_prevention', 'current_sender', 'proposed_sender'];
+  const decisions = Array.isArray(values.opportunities) ? values.opportunities.map(row =>
+    `<article><h3>${escape(row.outcome ?? row.id ?? 'Opportunity')}</h3><p class="muted">${escape(row.id ?? '')} · ${escape(row.decision ?? 'Unassessed')}</p><p>${escape(row.reason ?? '')}</p><dl>${mechanics.filter(key => row[key] != null).map(key => `<dt>${escape(label(key))}</dt><dd>${Array.isArray(row[key]) ? row[key].map(item => escape(item)).join('<br>') : escape(row[key])}</dd>`).join('')}</dl>${row.dependency ? `<p><strong>Dependency:</strong> ${escape(row.dependency)}</p>` : ''}${row.next_action ? `<p><strong>Next:</strong> ${escape(row.next_action)}</p>` : ''}${details(row, ['outcome', 'id', 'decision', 'reason', ...mechanics, 'dependency', 'next_action'])}</article>`).join('') : '<p>No decisions recorded yet.</p>';
+  const plan = values.intended_inputs?.plan_input ?? values.independent_review?.plan_input;
+  const events = Array.isArray(values.event_taxonomy) && values.event_taxonomy.length ? values.event_taxonomy : plan?.events;
+  const taxonomy = Array.isArray(events) ? events.map(event => `<article><h3>${escape(event.name)}</h3><p>${escape(event.description ?? '')}</p>${event.emit_when ? `<p><strong>Emit when:</strong> ${escape(event.emit_when)}</p>` : ''}${event.event_id ? `<p><strong>Occurrence identity:</strong> ${escape(event.event_id)}</p>` : ''}${event.evidence ? `<p><strong>Source:</strong> ${escape(event.evidence.join(', '))}</p>` : ''}${event.consumers ? `<p><strong>Consumers:</strong> ${escape(event.consumers.join(', '))}</p>` : ''}<dl>${Object.entries(event.properties ?? {}).map(([name, schema]) => `<dt>${escape(name)}</dt><dd>${escape(schema?.type ?? 'Unspecified type')} · ${schema?.required ? 'required' : 'optional'}${schema?.use ? ` · ${escape(schema.use)}` : ''}</dd>`).join('') || '<dt>Properties</dt><dd>None</dd>'}</dl><details><summary>Complete event schema</summary>${content(event, 4)}</details></article>`).join('') + (plan?.not_emitted?.length ? `<h3>Core facts not emitted</h3>${content(plan.not_emitted, 4)}` : '') : '<p>The complete event input has not been recorded yet.</p>';
+  // Collections rendered in complete cards above must not be repeated in the
+  // evidence projection: a valid JSON plan plus source cases still has to fit
+  // the same 512 KiB private-file/HTML limit. No field or packet is discarded.
+  const evidence = Object.fromEntries(Object.entries(values).filter(([key, value]) =>
+    !(['journeys', 'opportunities'].includes(key) && Array.isArray(value) && value.length)
+    && !(key === 'event_taxonomy' && Array.isArray(value) && value.length)));
+  const output = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>${escape(values.product ?? 'Customer lifecycle')} | Barua setup plan</title>
+<style>body{margin:0;background:#f6f4ef;color:#252720;font:16px/1.6 system-ui,sans-serif}main{max-width:960px;margin:auto;padding:40px 24px}h1{font-size:2.2rem;line-height:1.2}h2{margin-top:2rem;border-bottom:1px solid #d7d8ce;padding-bottom:8px}h3,h4,h5,h6{font-size:1rem;margin:16px 0 4px}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 12px}li{padding:8px 0}section{min-width:0}header,aside,article{padding:20px;background:white;border:1px solid #d7d8ce;border-radius:12px}aside{margin:20px 0}article{margin:12px 0}ol{padding-left:24px}.muted{color:#62675a}dl{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,3fr);gap:6px 16px}dt{font-weight:600;overflow-wrap:anywhere}dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer;font-weight:600;padding:16px 0}@media(max-width:600px){main{padding:20px 16px}h1{font-size:1.7rem}dl{display:block}dd{margin:0 0 12px}}</style></head>
+<body><main><header><p class="muted">Barua setup plan</p><h1>${escape(values.product ?? 'Customer lifecycle')}</h1><p>The full customer lifecycle and event taxonomy. This private snapshot is not an approval or a delivery receipt.</p></header>
+<aside><strong>Now</strong><p>Review the recorded decisions and any unresolved dependencies below.</p><strong>Done</strong><p>${escape(values.coverage_review?.status === 'complete' ? 'Source discovery and lifecycle coverage recorded.' : 'The artifact is saved; discovery or coverage is still in progress.')}</p><strong>Next</strong><p>Follow the recorded next actions and recheck current workspace state before continuing.</p></aside>
+<h2>Customer journeys</h2>${journeys}<h2>Lifecycle decisions</h2>${decisions}<h2>Event taxonomy</h2>${taxonomy}
+<details><summary>Source evidence and saved inputs</summary>${content(evidence)}</details></main></body></html>\n`;
+  if (Buffer.byteLength(output) > LIMIT) fail('The complete generated HTML exceeds 512 KiB. Keep every recorded field and shorten repeated explanation.');
+  return output;
+}
+
 function readPrivate(file, secrets = [], kind = 'JSON') {
   let fd, bytes;
   try {
@@ -269,7 +315,7 @@ function readPrivate(file, secrets = [], kind = 'JSON') {
   } finally { if (fd !== undefined) closeSync(fd); }
   const raw = bytes.toString('utf8');
   if (secrets.some(secret => secret && raw.includes(secret))
-    || /\b(?:ik|mk)_[A-Za-z0-9_-]{8,}\b|\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/i.test(raw))
+    || /\b(?:ik|mk|pk)_[A-Za-z0-9_-]{8,}\b|\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/i.test(raw))
     fail('Remove credentials from the review file before continuing.');
   return bytes;
 }
@@ -301,20 +347,18 @@ function renderTask(context, discovery) {
     || !context.source_files.every(path) || !unique(context.source_files)
     || !path(context.strategy_file) || !/\.json$/i.test(context.strategy_file)
     || !path(context.packet_file) || !/\.json$/i.test(context.packet_file)
-    || !singleLine(context.model) || !singleLine(context.effort))
-    fail('Provide only owner_request, source_files paths, strategy_file JSON path, packet_file JSON path, model and effort.');
+    || (context.model !== undefined && !singleLine(context.model)) || (context.effort !== undefined && !singleLine(context.effort)))
+    fail('Provide owner_request, source_files paths, strategy_file JSON path and packet_file JSON path.');
   const artifacts = [resolve(context.strategy_file), resolve(context.packet_file)];
   if (artifacts[0] === artifacts[1] || context.source_files.some(file => artifacts.includes(resolve(file))))
     fail('Keep the source paths separate from the strategy and packet paths.');
   // Read only the shipped procedure. Source and author files remain unopened
-  // until the native reviewer has recorded its source-first expectations.
+  // until the agent has recorded its source-first expectations.
   const template = readPrivate(fileURLToPath(new URL(discovery
     ? '../templates/journey-discovery-task.md' : '../templates/journey-review-task.md', import.meta.url)), [], 'task template');
   const contract = fileURLToPath(new URL('../references/events.md', import.meta.url));
-  const fields = discovery ? ['owner_request', 'source_files', 'model', 'effort'] : REVIEW_CONTEXT_FIELDS;
-  return { prompt: `${template.toString('utf8').trimEnd()}${discovery ? '' : `\n\nAuthoritative event contract (path): ${JSON.stringify(contract)}`}\n\nTask context (JSON):\n${JSON.stringify(Object.fromEntries(fields.map(key => [key, context[key]])), null, 2)}\n`,
-    expected_model: context.model,
-    native_call: { subagent_type: 'general-purpose', effort: context.effort, run_in_background: false } };
+  const fields = discovery ? ['owner_request', 'source_files'] : REVIEW_CONTEXT_FIELDS.filter(key => !['model', 'effort'].includes(key));
+  return { prompt: `${template.toString('utf8').trimEnd()}${discovery ? '' : `\n\nAuthoritative event contract (path): ${JSON.stringify(contract)}`}\n\nTask context (JSON):\n${JSON.stringify(Object.fromEntries(fields.map(key => [key, context[key]])), null, 2)}\n` };
 }
 
 export const renderReviewerTask = context => renderTask(context, false);
@@ -325,6 +369,13 @@ export function checkMarkdown(file, review, secrets = []) {
   const bytes = readPrivate(file.replace(/\.json$/i, '.md'), secrets, 'Markdown');
   if (!bytes.equals(Buffer.from(renderMarkdown(review))))
     fail('The Markdown does not match this review. Generate its current readable view before continuing.');
+}
+
+export function checkHtml(file, review, secrets = []) {
+  if (!/\.json$/i.test(file)) fail('Use a .json journey file with its generated .html sibling.');
+  const bytes = readPrivate(file.replace(/\.json$/i, '.html'), secrets, 'HTML');
+  if (!bytes.equals(Buffer.from(renderHtml(review))))
+    fail('The HTML does not match this plan. Generate its current readable view before continuing.');
 }
 
 // Bind the executable action/input only. Request IDs, timestamps and other
@@ -338,11 +389,73 @@ export function submissionHash(command) {
 // Only observation/receipt fields are omitted. New strategy metadata, source
 // revisions and every held opportunity field remain part of this binding.
 const OPERATIONAL_FIELDS = new Set(['captured_at', 'discovery_review', 'coverage_review', 'workspace',
-  'reconciliation', 'approval_observations', 'submission_reviews', 'independent_review']);
+  'reconciliation', 'approval_observations', 'submission_reviews', 'independent_review', 'intended_inputs']);
 const digest = value => sha256(JSON.stringify(stable(value)));
 export function strategyDigest(review) {
   if (!object(review)) fail('Use a journey review object to calculate its strategy digest.');
-  return digest(Object.fromEntries(Object.entries(review).filter(([name]) => !OPERATIONAL_FIELDS.has(name))));
+  const strategy = Object.fromEntries(Object.entries(review).filter(([name]) => !OPERATIONAL_FIELDS.has(name)));
+  // Source-case evidence has its own source/decision bindings, so including it
+  // here does not create a digest cycle. Other observation metadata stays out.
+  if (review.coverage_review?.source_cases !== undefined)
+    strategy.coverage_review = { source_cases: review.coverage_review.source_cases };
+  return digest(strategy);
+}
+
+function sourceCaseBindings(review, opportunity, sourceIds) {
+  const facts = sourceIds.map(id => review.source_inventory.find(row => row.id === id));
+  if (facts.some(row => !row)) fail('Source cases must reference recorded source inventory IDs.');
+  return { source_sha256: digest({ sources: review.sources, facts }), decision_sha256: digest({ opportunity,
+    owner_scope: review.owner_scope,
+    controls: review.opportunities.filter(row => row.kind === 'control'),
+    event_taxonomy: review.event_taxonomy?.filter(row => opportunity.planned_events?.includes(row.name)) }) };
+}
+
+export function renderSourceCases(review) {
+  checkDiscovery(review, { allowIncompleteReviews: true });
+  return review.opportunities.map((row, index) => {
+    const source_ids = review.source_inventory.filter(fact => fact.opportunity_ids.includes(row.id)).map(fact => fact.id);
+    return { id: `case-${index + 1}`, opportunity_id: row.id, source_ids,
+      ...sourceCaseBindings(review, row, source_ids), case_kind: 'boundary',
+      source_state: null, intended_action: null, source_preconditions: [], method: null,
+      observed_result: { kind: null, detail: null }, expected_outcome: null, planned_outcome: null,
+      evidence: [], checked_at: null };
+  });
+}
+
+export function checkSourceCases(review) {
+  const cases = review.coverage_review?.source_cases;
+  if (!Array.isArray(cases) || !cases.length || cases.some(row => !text(row?.id, 128)) || !unique(cases.map(row => row.id)))
+    fail('Record distinct source cases in coverage_review.source_cases before submitting the current inputs.');
+  const opportunities = new Map(review.opportunities.map(row => [row.id, row]));
+  for (const row of cases) {
+    const opportunity = opportunities.get(row.opportunity_id);
+    if (!opportunity || !strings(row.source_ids, 1) || !unique(row.source_ids)
+      || !['typical', 'boundary'].includes(row.case_kind) || !text(row.source_state) || !text(row.intended_action)
+      || !strings(row.source_preconditions) || !['isolated_test', 'source_trace'].includes(row.method)
+      || !['returned', 'rejected', 'state', 'unavailable'].includes(row.observed_result?.kind)
+      || !text(row.observed_result?.detail) || !strings(row.evidence, 1) || !date(row.checked_at)
+      || !['send', 'hold', 'stop'].includes(row.expected_outcome) || !['send', 'hold', 'stop'].includes(row.planned_outcome))
+      fail('Each source case needs its state, exact action, preconditions, observed source result, planned comparison and evidence.');
+    const bindings = sourceCaseBindings(review, opportunity, row.source_ids);
+    if (row.source_sha256 !== bindings.source_sha256 || row.decision_sha256 !== bindings.decision_sha256)
+      fail('Source case evidence is stale for the current source facts or exact decision. Recheck affected cases.');
+    if (row.expected_outcome !== row.planned_outcome)
+      fail('A source case contradicts the intended decision. Correct its rules before submission, including held work.');
+    if (row.observed_result.kind === 'unavailable' && (row.method !== 'source_trace'
+      || opportunity.decision !== 'blocked' || !text(opportunity.dependency) || !text(opportunity.next_action)
+      || row.planned_outcome !== 'hold'))
+      fail('Unavailable source execution needs an honest source trace and a blocked decision with its dependency and next action.');
+  }
+  for (const opportunity of review.opportunities) {
+    if (!cases.some(row => row.opportunity_id === opportunity.id && row.case_kind === 'boundary'))
+      fail('Exercise or trace a boundary case for every decision, including held and excluded work.');
+  }
+  for (const fact of review.source_inventory.filter(row => row.material)) {
+    for (const id of fact.opportunity_ids) {
+      if (!cases.some(row => row.opportunity_id === id && row.source_ids.includes(fact.id)))
+        fail('Apply each material source fact to every linked decision in the source-case table.');
+    }
+  }
 }
 
 export function checklistDigest(checklist) {
@@ -359,7 +472,7 @@ export function checklistDigest(checklist) {
 
 export function reviewPacket(review, { plan_input, brand_patch, checklist } = {}) {
   if (!object(plan_input) || !Array.isArray(plan_input.events) || !object(brand_patch))
-    fail('Provide the complete plan_input and brand_patch objects for independent review.');
+    fail('Provide the complete plan_input and brand_patch objects for the saved plan.');
   normalizedPlan(plan_input);
   const playbook = renderPlaybook(review);
   const packet = { strategy_sha256: strategyDigest(review), plan_input, plan_sha256: digest(plan_input),
@@ -371,46 +484,52 @@ export function reviewPacket(review, { plan_input, brand_patch, checklist } = {}
   return packet;
 }
 
-// These checks bind a recorded decision. Session/model strings are declarations,
-// not authentication: only retained harness evidence can show who ran a review.
-export function checkIndependentReview(review, command) {
+// Bind source, strategy and exact executable inputs. Review identity is optional
+// history, never authority. Legacy receipts remain readable as input packets.
+export function checkIntendedInputs(review, command) {
   checkDiscovery(review);
-  const receipt = review?.independent_review;
-  const identity = value => object(value) && ['session_id', 'harness', 'model', 'effort'].every(name => text(value[name]));
-  if (!object(receipt) || receipt.version !== 1 || receipt.status !== 'pass'
-    || !identity(receipt.author) || !identity(receipt.reviewer)
-    || receipt.author.session_id === receipt.reviewer.session_id || !date(receipt.checked_at)
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(receipt.checked_at)
-    || !Array.isArray(receipt.findings) || receipt.findings.length)
-    fail('Record a passing independent review with distinct author and reviewer sessions before this action.');
-  const packet = reviewPacket(review, receipt);
+  const receipt = review?.intended_inputs ?? review?.independent_review;
+  if (!object(receipt)) fail('Save the complete intended_inputs packet before this action.');
+  if (review.intended_inputs) {
+    checkTaxonomy(review, receipt.plan_input);
+    checkSourceCases(review);
+  }
+  const packet = reviewPacket(review, { plan_input: receipt.plan_input, brand_patch: receipt.brand_patch });
   for (const field of ['strategy_sha256', 'plan_sha256', 'brand_patch_sha256', 'playbook_sha256']) {
     if (!HASH.test(receipt[field] ?? '') || receipt[field] !== packet[field])
-      fail('The independent review no longer matches the recorded strategy or intended inputs. Repeat that review.');
+      fail('The saved inputs no longer match the recorded strategy. Regenerate the packet for the current plan.');
   }
-  if (receipt.checklist_sha256 !== checklistDigest(receipt.checklist))
-    fail('The independent review checklist changed after its source expectations were recorded.');
-  const ids = new Set((review.opportunities ?? []).map(row => row.id));
-  const linked = row => strings(row?.opportunity_ids, 1) && unique(row.opportunity_ids)
-    && row.opportunity_ids.every(id => ids.has(id));
-  if (receipt.checklist.some(row => row.verdict !== 'pass' || !linked(row))
-    || [...ids].some(id => !receipt.checklist.some(row => row.opportunity_ids.includes(id))))
-    fail('Complete the independent source checklist against every opportunity decision.');
-  if (!Array.isArray(receipt.counterexamples) || !receipt.counterexamples.length
-    || !unique(receipt.counterexamples.map(row => row?.id))
-    || receipt.counterexamples.some(row => !text(row?.id, 128) || !text(row.scenario) || !text(row.expected)
-      || !text(row.result) || !strings(row.evidence, 1) || !linked(row) || row.verdict !== 'pass'))
-    fail('Record the independent review of concrete adverse-state counterexamples and their results.');
   if (command?.action === 'plan.propose' && digest(command.input) !== receipt.plan_sha256)
-    fail('The plan input differs from the independent review. Review the complete intended plan again.');
+    fail('The plan input differs from the saved intended inputs. Regenerate the packet for the current plan.');
   if (['brand.confirm', 'brand.update'].includes(command?.action)) {
     const { expectedVersion: _version, proposalHash: _proposal, seen: _seen, playbook, ...semantic } = command.input ?? {};
     if (typeof playbook !== 'string' || sha256(playbook) !== receipt.playbook_sha256)
-      fail('Use the exact generated playbook from the independently reviewed artifact before submitting.');
+      fail('Use the exact generated playbook from the current artifact before submitting.');
     if (digest(semantic) !== digest({ patch: receipt.brand_patch }))
-      fail('The brand patch differs from the independent review. Review the new input first.');
+      fail('The brand patch differs from the saved intended inputs. Regenerate the packet first.');
   }
   return receipt;
+}
+
+// Compatibility for installed callers. This no longer checks reviewer identity.
+export const checkIndependentReview = checkIntendedInputs;
+
+// New packets expose core as well as custom events, their actual emit sites and
+// consumers. Legacy receipts keep their historical schema; their full strategy
+// and exact plan bindings are still checked above.
+export function checkTaxonomy(review, plan) {
+  const rows = review.event_taxonomy, opportunities = new Set(review.opportunities.map(row => row.id));
+  if (!Array.isArray(rows) || !rows.length || !unique(rows.map(row => row?.name))
+    || rows.some(row => !text(row?.name) || !text(row.description) || !text(row.emit_when) || !text(row.event_id)
+      || !strings(row.evidence, 1) || !object(row.properties) || !strings(row.consumers, 1)
+      || row.consumers.some(id => !opportunities.has(id))))
+    fail('Record the complete event_taxonomy with source, emission, occurrence identity, property schema and consumers.');
+  const byName = new Map(rows.map(row => [row.name, row]));
+  for (const row of review.opportunities) for (const name of row.planned_events ?? [])
+    if (!byName.get(name)?.consumers.includes(row.id)) fail('Every planned event must reach its consuming opportunity in the event taxonomy.');
+  for (const event of plan?.events ?? [])
+    if (!byName.has(event.name) || !isDeepStrictEqual(byName.get(event.name).properties, event.properties ?? {}))
+      fail('The event taxonomy must contain every custom event and its exact planned properties.');
 }
 
 // The public helper cannot import the server. This comparison mirrors only
@@ -462,17 +581,17 @@ export function checkPlanApproval(review, view, input) {
     || !Array.isArray(target.shadowed) || target.shadowed.length)
     fail('The reviewed plan is missing, superseded or shadowed. Read and review the current plan.');
   if (!isDeepStrictEqual(normalizedPlan(receipt.plan_input), normalizedPlan(target, true)))
-    fail('The current plan definitions or declarations differ from the independent review.');
+    fail('The current plan definitions or declarations differ from the saved intended inputs.');
   return target;
 }
 
-export function checkDiscovery(review) {
+export function checkDiscovery(review, { allowIncompleteReviews = false } = {}) {
   perPlay(review);
   if (review?.version !== 1 || !text(review.product) || !date(review.captured_at)
     || !Array.isArray(review.sources) || !review.sources.length
     || review.sources.some(source => !text(source?.repo) || !text(source?.revision)))
     fail('Record the product and inspected source revisions in journey-review.json.');
-  if (!complete(review.discovery_review) || !complete(review.coverage_review))
+  if (!allowIncompleteReviews && (!complete(review.discovery_review) || !complete(review.coverage_review)))
     fail('Finish the separate source discovery and coverage reviews before this action.');
   const journeys = review.journeys, opportunities = review.opportunities, inventory = review.source_inventory;
   if (![journeys, opportunities, inventory].every(rows => Array.isArray(rows) && rows.length)
@@ -480,12 +599,24 @@ export function checkDiscovery(review) {
     fail('Record distinct source inventory, journey and opportunity IDs before this action.');
   const byJourney = new Map(journeys.map(row => [row.id, row])), byOpportunity = new Map(opportunities.map(row => [row.id, row]));
   for (const row of journeys) {
+    if (typeof row.notes !== 'string') fail('Record journey notes as text, including an empty string when there are no notes.');
     if (row.assessment !== 'assessed' || !text(row.situation) || !strings(row.evidence, 1)
       || !strings(row.opportunity_ids, 1) || !unique(row.opportunity_ids)
       || row.opportunity_ids.some(id => !byOpportunity.get(id)?.journey_ids?.includes(row.id)))
       fail('Assess each discovered journey and link it to its opportunity decisions in both directions.');
   }
   for (const row of opportunities) {
+    // These fields are nullable, not optional or arbitrary JSON. Apply the
+    // same recorded-shape contract to held/excluded rows before any request.
+    if (!['lifecycle', 'service', 'micro', 'control'].includes(row.kind) || !text(row.outcome))
+      fail('Record a valid kind and outcome for every opportunity.');
+    for (const name of ['trigger', 'actor', 'subject', 'eligibility', 'timing', 'reentry',
+      'current_sender', 'proposed_sender', 'duplicate_prevention', 'dependency', 'next_action']) {
+      if (row[name] !== null && !text(row[name])) fail(`Opportunity ${row.id} ${name} must be nonempty text or null.`);
+    }
+    for (const name of ['stops', 'context', 'facts', 'planned_events']) {
+      if (!strings(row[name])) fail(`Opportunity ${row.id} ${name} must be a list of nonempty strings.`);
+    }
     if (!['covered', 'excluded', 'blocked'].includes(row.decision) || !text(row.reason) || !strings(row.evidence, 1)
       || !strings(row.journey_ids, 1) || !unique(row.journey_ids)
       || row.journey_ids.some(id => !byJourney.get(id)?.opportunity_ids?.includes(row.id)))
@@ -627,24 +758,33 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const { values, positionals } = parseArgs({ options: {
       'input-file': { type: 'string' }, 'journey-review-file': { type: 'string' },
       'opportunity-id': { type: 'string' },
+      'check-final': { type: 'boolean' },
       render: { type: 'string' },
     }, allowPositionals: true });
     if (values['opportunity-id'] !== undefined && (values.render || !values['journey-review-file']))
       fail('Use --opportunity-id with a play.propose action and --journey-review-file.');
-    if (['discovery-task', 'reviewer-task'].includes(values.render)) {
+    if (values['check-final']) {
+      if (positionals.length || !values['journey-review-file'] || values.render || values['input-file'] || values['opportunity-id'])
+        fail('Use --check-final with only --journey-review-file.');
+      const { review } = readJourneyReview(values['journey-review-file']);
+      checkIntendedInputs(review);
+      checkHtml(values['journey-review-file'], review);
+      process.stdout.write(JSON.stringify({ currentArtifactMatches: true, strategySha256: strategyDigest(review) }) + '\n');
+    } else if (['discovery-task', 'reviewer-task'].includes(values.render)) {
       if (positionals.length || !values['input-file'] || values['journey-review-file'])
         fail('Use --render discovery-task or reviewer-task with only --input-file for the review context.');
       const render = values.render === 'discovery-task' ? renderDiscoveryTask : renderReviewerTask;
       process.stdout.write(JSON.stringify(render(readJson(values['input-file']).value)) + '\n');
     } else if (values.render) {
       if (positionals.length || !values['journey-review-file']
-        || !['playbook', 'size', 'markdown', 'packet', 'digest'].includes(values.render)
+        || !['playbook', 'size', 'markdown', 'html', 'packet', 'digest', 'source-cases'].includes(values.render)
         || (values.render === 'packet' ? !values['input-file'] : values['input-file']))
-        fail('Use --render playbook, size, markdown or digest with --journey-review-file. Packet also needs --input-file with plan_input and brand_patch.');
+        fail('Use --render playbook, size, markdown, html, digest or source-cases with --journey-review-file. Packet also needs --input-file with plan_input and brand_patch.');
       const { review } = readJourneyReview(values['journey-review-file']);
-      const output = values.render === 'playbook' ? renderPlaybook(review) : values.render === 'markdown' ? renderMarkdown(review)
+      const output = values.render === 'playbook' ? renderPlaybook(review) : values.render === 'markdown' ? renderMarkdown(review) : values.render === 'html' ? renderHtml(review)
         : JSON.stringify(values.render === 'size' ? measurePlaybook(review)
           : values.render === 'digest' ? { strategy_sha256: strategyDigest(review) }
+          : values.render === 'source-cases' ? renderSourceCases(review)
           : reviewPacket(review, readJson(values['input-file']).value)) + '\n';
       process.stdout.write(output);
       process.exitCode = 0;
@@ -655,7 +795,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         if (!['plan.propose', 'brand.confirm', 'brand.update', 'play.propose'].includes(value.action))
           fail('Local submission checks support plan proposals, brand actions and Play proposals. Use manage.mjs for an exact Play approval.');
         const { review } = readJourneyReview(values['journey-review-file']);
-        checkMarkdown(values['journey-review-file'], review);
+        checkHtml(values['journey-review-file'], review);
         checkSubmission(review, value, values['opportunity-id']);
       }
       process.stdout.write(JSON.stringify({ action: value.action, inputSha256: submissionHash(value),

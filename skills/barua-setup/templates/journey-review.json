@@ -15,13 +15,15 @@
     "findings": []
   },
   "journeys": [],
+  "event_taxonomy": [],
   "opportunities": [],
   "coverage_review": {
     "status": "unreviewed",
     "checked_at": null,
-    "findings": []
+    "findings": [],
+    "source_cases": []
   },
-  "independent_review": null,
+  "intended_inputs": null,
   "workspace": {
     "id": null,
     "plan_version": null

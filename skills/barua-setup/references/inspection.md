@@ -43,6 +43,9 @@ the evidence came from a local fixture or a live check.
 | --- | --- | --- | --- |
 | `capabilities` | `manage.mjs` | `GET /capabilities` | Connection |
 | `setup` | `manage.mjs` | `GET /setup` | Connection |
+| `pixel` | `manage.mjs` | `GET /pixel` | `setup:write`; recovery operation reference, never plaintext |
+| `sample` | `manage.mjs` | `GET /setup/samples/:id` | `setup:write`; granting owner and workspace |
+| `sample-preview` | `manage.mjs` | `GET /setup/samples/:id/preview` | `setup:write`; save with `--output-file` to a new private HTML file |
 | `usage` | `manage.mjs` | `GET /usage` | Connection |
 | `deliverability` | `inspect.mjs` | `GET /deliverability` | Connection; remains readable with stale terms for stop recovery |
 | `operations` | `manage.mjs` | `GET /operations` | Connection |

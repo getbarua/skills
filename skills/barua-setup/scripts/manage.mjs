@@ -25,17 +25,18 @@ Commands: connect, recover-key, connections, capabilities, setup, usage, operati
           campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
           play-feedback, play-paths, discovery, discovery-opportunity,
-          people, people-search, person, person-activity, person-events
+          people, people-search, person, person-activity, person-events, pixel, sample, sample-preview
 
 BARUA_URL defaults to https://barua.ai. BARUA_MANAGEMENT_KEY authorizes
 management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN and
 BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
+Set BARUA_WORKSPACE_ID for management calls too to bind the selected workspace.
 
 --input-file <file>       JSON body for connect/action/review/people-search; otherwise stdin
 --journey-review-file <file>  private source review for plan.propose or brand actions;
                              exact per-Play request for play.propose;
                              exact approval observations for play.approve;
-                             requires its current generated .md sibling
+                             requires its current generated .html sibling
 --opportunity-id <id>    reviewed marketing opportunity for play.propose;
                          requires --journey-review-file
 --idempotency-key <id>    required for connect/action; reuse after response loss
@@ -44,6 +45,7 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
                          job ID for campaign-job/play-job; run ID for play-trace;
                          person ID for person/person-activity/person-events;
                          opportunity ID for discovery-opportunity
+                         sample ID for sample/sample-preview
 --session-id <uuid>      session ID from person-activity, required for person-events
 --cursor <cursor>        next_cursor from people/person-activity/person-events
 --limit <n>              people/person-activity/person-events page size, 1..100
@@ -59,6 +61,7 @@ BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
                              secret goes to its stdin; its output is suppressed
 --timeout-ms <n>         total bound including secret storage, 1..300000, default 60000
 --poll-ms <n>            wait polling interval, 100..10000, default 1000
+--output-file <new-file> sample-preview: private HTML, never overwritten
 --output-dir <new-dir>   review-package: private HTML and JSON, never overwritten
 --proof-id <uuid>        review-package: read an existing delivery proof
 
@@ -67,8 +70,8 @@ or external_id from a private JSON body, with optional limit and cursor.
 It is read-only. Keep search details out of command arguments and URLs.
 Profile sections marked unavailable must not be interpreted as empty.
 
-connect, recover-key and action key.create require a secret destination before sending.
-resume and wait require one before executing a key.create operation. Never
+connect, recover-key and action key.create/pixel.key.create require a secret destination before sending.
+resume and wait require one before executing either key creation operation. Never
 reuse an occupied secret file. A failed secret transfer can be recovered by
 repeating the same creation request or resuming its operation with a new file.
 recover-key --id saves the same connection key again with owner authorization;
@@ -102,7 +105,7 @@ function fail(code, message) { throw Object.assign(new Error(message), { code })
 function redact(value) {
   if (typeof value === 'string') {
     for (const credential of credentials) value = value.split(credential).join('[REDACTED]');
-    return value.replace(/\b(?:ik|mk)_[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
+    return value.replace(/\b(?:ik|mk|pk)_[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
       .replace(/\bBearer\s+[^\s"'<>]+/gi, 'Bearer [REDACTED]')
       .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED]');
   }
@@ -262,7 +265,7 @@ async function main() {
     id: { type: 'string' }, 'secret-file': { type: 'string' },
     'play-id': { type: 'string' }, 'revision-id': { type: 'string' }, after: { type: 'string' }, status: { type: 'string' },
     'secret-command-file': { type: 'string' }, 'timeout-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'bind-stdin': { type: 'boolean' },
-    'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
+    'output-file': { type: 'string' }, 'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
     'opportunity-id': { type: 'string' }, 'after-version': { type: 'string' },
     'session-id': { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'string' },
     version: { type: 'string' },
@@ -272,9 +275,9 @@ async function main() {
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
     'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
-    'play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
+    'sample','sample-preview','pixel','play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
+  const hasId = ['sample','sample-preview','recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
   if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a UUID.');
   if (args.version !== undefined && (command !== 'discovery-opportunity' || !/^[1-9][0-9]*$/.test(args.version) || !Number.isSafeInteger(Number(args.version)))) {
     fail('invalid_flag', 'Use --version only with discovery-opportunity and its positive version number.');
@@ -324,6 +327,8 @@ async function main() {
   if (!['connect','recover-key','action','resume','wait'].includes(command) && (args['secret-file'] || args['secret-command-file'])) {
     fail('invalid_flag', 'This command does not return a key.');
   }
+  if (command === 'sample-preview' ? !args['output-file'] : args['output-file'] !== undefined)
+    fail('invalid_flag', 'Use --output-file with sample-preview and a new private HTML file.');
   let base;
   try { base = new URL(process.env.BARUA_URL ?? 'https://barua.ai'); } catch { fail('invalid_origin', 'BARUA_URL must be an HTTPS origin.'); }
   if ((base.protocol !== 'https:' && !(base.protocol === 'http:' && LOCAL.has(base.hostname))) || base.username || base.password
@@ -331,12 +336,12 @@ async function main() {
   const owner = ['connect','recover-key','connections','review'].includes(command);
   const key = owner ? process.env.BARUA_OWNER_TOKEN : process.env.BARUA_MANAGEMENT_KEY;
   if (!key || /\s/.test(key) || (!owner && !/^mk_[A-Za-z0-9_-]{43}$/.test(key))) fail('missing_credentials', owner ? 'Set BARUA_OWNER_TOKEN.' : 'Set BARUA_MANAGEMENT_KEY to a management key.');
-  if (owner && !UUID.test(process.env.BARUA_WORKSPACE_ID ?? '')) fail('missing_workspace', 'Set BARUA_WORKSPACE_ID to the authorized workspace ID.');
+  if ((owner || process.env.BARUA_WORKSPACE_ID !== undefined) && !UUID.test(process.env.BARUA_WORKSPACE_ID ?? '')) fail('missing_workspace', 'Set BARUA_WORKSPACE_ID to the authorized workspace ID.');
   const timeout = integer(args['timeout-ms'], 60000, 1, 300000, '--timeout-ms');
   const poll = integer(args['poll-ms'], 1000, 100, 10000, '--poll-ms');
   const deadline = Date.now() + timeout;
   const headers = { authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json',
-    ...(owner ? { 'x-workspace-id': process.env.BARUA_WORKSPACE_ID } : {}),
+    ...(process.env.BARUA_WORKSPACE_ID ? { 'x-workspace-id': process.env.BARUA_WORKSPACE_ID } : {}),
     ...(creates ? { 'idempotency-key': args['idempotency-key'] } : {}) };
   const body = ((writes || privateRead) && (command !== 'proof' || args['input-file'] || args['bind-stdin'])) || (command === 'review-package' && args['input-file'])
     ? await inputBody(args['input-file'], deadline) : undefined;
@@ -360,10 +365,11 @@ async function main() {
       throw error;
     }
     const artifact = review.readJourneyReview(args['journey-review-file'], credentials);
-    review.checkMarkdown(args['journey-review-file'], artifact.review, credentials);
-    // The record binds the source review to its strategy and intended inputs.
-    // Runtime evidence outside this helper establishes who performed it.
-    review.checkIndependentReview(artifact.review, body);
+    if (!UUID.test(process.env.BARUA_WORKSPACE_ID ?? '') || artifact.review.workspace?.id !== process.env.BARUA_WORKSPACE_ID)
+      fail('journey_review', 'Set BARUA_WORKSPACE_ID to the exact workspace recorded in the journey artifact and verify capabilities first.');
+    review.checkHtml(args['journey-review-file'], artifact.review, credentials);
+    // The record binds the source and exact intended inputs, not a reviewer.
+    review.checkIntendedInputs(artifact.review, body);
     if (body.action === 'play.approve') {
       if (body.input.reconciliation !== undefined) fail('journey_review', 'Use the private artifact or a prepared reconciliation record, without combining them.');
       review.checkDiscovery(artifact.review);
@@ -374,7 +380,7 @@ async function main() {
     } else review.checkSubmission(artifact.review, body, args['opportunity-id']);
   }
   let sink;
-  const ensureSink = async () => (sink ??= await secretSink(args, deadline));
+  const ensureSink = async () => (sink ??= await secretSink(command === 'sample-preview' ? { 'secret-file': args['output-file'] } : args, deadline));
   async function request(path, method = 'GET', input) {
     let last;
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -384,7 +390,7 @@ async function main() {
           ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(Math.max(1, Math.min(command === 'review-package' ? 30000 : 15000, deadline - Date.now()))) });
         if (response.status >= 300 && response.status < 400) fail('redirect_refused', 'Barua redirected the request. No credentials were forwarded. Check BARUA_URL.');
         let text;
-        if (command === 'review-package' || journey) {
+        if (command === 'review-package' || command === 'sample-preview' || journey) {
           // Bound each reply while streaming, before allocating its JSON object.
           let bytes = 0; const chunks = [];
           for await (const chunk of response.body ?? []) {
@@ -400,6 +406,11 @@ async function main() {
           }
           text = Buffer.concat(chunks).toString('utf8');
         } else text = await response.text();
+        if (command === 'sample-preview' && response.ok) {
+          if (!/^text\/html(?:;|$)/i.test(response.headers.get('content-type') ?? ''))
+            fail('unexpected_response', 'Barua did not return an HTML preview.');
+          return { status: response.status, body: { html: text }, retry_after_ms: 0 };
+        }
         let data;
         try { data = JSON.parse(text); } catch { fail('unexpected_response', 'Barua did not return JSON.'); }
         last = { status: response.status, body: data, retry_after_ms: retryDelay(response, attempt) };
@@ -420,13 +431,13 @@ async function main() {
     // Creation/recovery commands succeed only when they deliver the secret;
     // status and owner decisions remain metadata-only reads of that history.
     const managementSecret = ['connect', 'recover-key'].includes(command);
-    if ((managementSecret || (operation?.action === 'key.create' && operation.status === 'succeeded'
+    if ((managementSecret || (['key.create', 'pixel.key.create'].includes(operation?.action) && operation.status === 'succeeded'
       && ['action', 'resume', 'wait'].includes(command))) && response.body?.secret === undefined) {
       fail('secret_unavailable', 'Barua could not recover this key. Check its current access before continuing.');
     }
     let saved = {};
     if (response.body?.secret !== undefined) {
-      const format = managementSecret ? /^mk_[A-Za-z0-9_-]{43}$/ : /^(?:mk|ik)_[A-Za-z0-9_-]{43}$/;
+      const format = managementSecret ? /^mk_[A-Za-z0-9_-]{43}$/ : /^(?:(?:mk|ik)_[A-Za-z0-9_-]{43}|pk_[A-Za-z0-9_-]{43,48})$/;
       if (typeof response.body.secret !== 'string' || !format.test(response.body.secret)) fail('unexpected_response', 'Barua returned an invalid key.');
       credentials.push(response.body.secret);
       saved = await (await ensureSink()).save(response.body.secret);
@@ -472,11 +483,20 @@ async function main() {
       return await collect({ request, redact, base: base.origin, outputDir: args['output-dir'], evidence: body,
         proofId: args['proof-id'], deadline });
     }
-    if (['connect', 'recover-key'].includes(command) || (command === 'action' && body.action === 'key.create')) await ensureSink();
+    if (['connect', 'recover-key'].includes(command) || (command === 'action' && ['key.create', 'pixel.key.create'].includes(body.action))) await ensureSink();
     // Await completion before finally closes/removes a reserved secret file.
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
     if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
     if (command === 'connections') return await finish(await request('/api/agent-connections'));
+    if (command === 'sample-preview') {
+      const output = await ensureSink();
+      const response = await request(`${prefix}/setup/samples/${args.id}/preview`);
+      if (response.status < 200 || response.status >= 300) return await finish(response);
+      const saved = await output.save(response.body.html);
+      return { exit: 0, status: response.status, preview_saved: true, destination: saved.destination };
+    }
+    if (command === 'sample') return await finish(await request(`${prefix}/setup/samples/${args.id}`));
+    if (command === 'pixel') return await finish(await request(`${prefix}/pixel`));
     if (command === 'people-search') return await finish(await request(`${prefix}/people/search`, 'POST', body));
     if (peoplePage || command === 'person') {
       const path = command === 'people' ? '/people' : `/people/${args.id}`
@@ -601,7 +621,7 @@ async function main() {
     let operation = operationFrom(response.body);
     if (command === 'status') return await finish(response, true);
     if (command === 'resume') {
-      if (operation.action === 'key.create') await ensureSink();
+      if (['key.create', 'pixel.key.create'].includes(operation.action)) await ensureSink();
       return await finish(await request(`${prefix}/operations/${args.id}/resume`, 'POST', {}), true);
     }
     // A new process resumes the durable operation. No local chat state or
@@ -610,7 +630,7 @@ async function main() {
       try {
         const lease = Date.parse(operation.lease_until ?? '');
         if (operation.status === 'ready' || (operation.status === 'running' && Number.isFinite(lease) && lease <= Date.now())) {
-          if (operation.action === 'key.create') await ensureSink();
+          if (['key.create', 'pixel.key.create'].includes(operation.action)) await ensureSink();
           const resumed = await request(`${prefix}/operations/${args.id}/resume`, 'POST', {});
           if (resumed.status === 0 && Date.now() >= deadline) break;
           response = resumed;
@@ -634,7 +654,7 @@ async function main() {
     // Status reads intentionally omit secrets, including after another
     // process completed the operation. Reuse its recovery endpoint once;
     // never create a replacement key or imply an unwritten file was saved.
-    if (operation.action === 'key.create' && operation.status === 'succeeded' && response.body?.secret === undefined) {
+    if (['key.create', 'pixel.key.create'].includes(operation.action) && operation.status === 'succeeded' && response.body?.secret === undefined) {
       await ensureSink();
       return await finish(await request(`${prefix}/operations/${args.id}/resume`, 'POST', {}), true);
     }

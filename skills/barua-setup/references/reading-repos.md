@@ -1,6 +1,6 @@
 # Reading the product's repos
 
-Read every repo the owner names. A monorepo counts once, with several roles. First understand the complete customer journey and its outcomes, then locate the server commit point for each supporting fact. Existing emitters are evidence of implementation, not a boundary on the intended journey.
+Read the product sources needed for the requested outcome. A monorepo counts once, with several roles. For a named event, trace its server commit point, recipient identity and consumers. Existing emitters help locate the work; a missing emitter for a real fact is implementation work. A complete product inventory is optional.
 
 Source files and the full discovery inventory stay on the machine. Barua gets
 the declared events and configuration you submit, including the source-backed
@@ -9,7 +9,8 @@ review findings and the exact policy and preview references.
 
 ## Journey discovery before event selection
 
-Follow [journey-review.md](journey-review.md) before proposing or approving a plan.
+Use this section when the owner chooses the optional [journey review](journey-review.md).
+For a named event, follow [Start with one event](events.md#start-with-one-event), then the relevant implementation rules below.
 Trace routes through server handlers, persisted state, workers and existing
 emails. Include alternate creation modes, incomplete actions, failures,
 recovery, payment states, fulfilment, returning users and account controls
@@ -20,7 +21,7 @@ Make two recorded passes. First inventory the source-owned entities and their
 variants. Follow state changes through failure and recovery, then record time
 conditions and current senders. Keep that list separate from the messages you
 want to propose. Use the `source_inventory` fields in the journey reference.
-Before selecting events, complete its [fact-to-decision checks](journey-review.md#trace-facts-through-every-decision)
+Before selecting events, complete its [source-to-consumer checks](journey-review.md#trace-the-source-to-consumer-contract)
 for shared consumers, preexisting state, action prerequisites and time without callbacks.
 
 Next map every material source row to an assessed opportunity or control
