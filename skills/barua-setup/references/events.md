@@ -301,9 +301,14 @@ A 202 means Barua stored every event with a disposition. An invalid event is kep
 | `POST /events`, `live` mode (the default) | 100 events, 256 KiB |
 | `POST /events`, `backfill` mode | 1,000 events, 2 MiB |
 | Test key events | 10,000 at once per workspace, refilling at 10,000 per 24 hours |
-| `POST /plan` | 256 KiB, and 50 new proposals per workspace in 24 hours |
+| `POST /plan` | 1024 KiB (1 MiB), and 50 new proposals per workspace in 24 hours |
 | `PUT /brand` | 32 KiB per request. The proposal Barua stores, the normalized tokens and `sources` as compact UTF-8 JSON, is at most 14 KiB, and a larger one answers 400 `brand_invalid`. |
 | `POST /people/erase` | 1 KiB |
+
+Delegated management requests retain their 512 KiB limit. For a large
+`plan.propose`, send compact UTF-8 JSON without indentation or Unicode escaping.
+All 100 event definitions at their field limits fit in this form. The installed
+management helper serializes requests this way.
 
 A 429 carries `Retry-After`. Wait that long, then send the same request again.
 
@@ -381,7 +386,7 @@ Barua accepts your own named events and typed properties. Order events are built
 <!-- docs-check:plan-rules -->
 | Field | Rule |
 | --- | --- |
-| `events` | Up to 25 custom events. `[]` removes them all. |
+| `events` | Up to 100 custom events. `[]` removes them all. |
 | `name` | Matches `^[a-z][a-z0-9_]{0,63}$`, for example `report_exported`. It can't be a core event name or start with `barua_`, and `constructor` and `prototype` are reserved. The fixed names `pixel_page_viewed`, `pixel_product_viewed`, `pixel_searched`, `pixel_cart_observed` and `pixel_interaction_observed` are reserved for pixel activity. It appears once per plan. |
 | `description` | 1 to 280 characters, trimmed, with no control characters or unpaired UTF-16 surrogates. Say when the event fires in business terms. The owner reads it before approving. |
 | `properties` | Up to 20. Each key matches the same pattern as `name`. `event_id`, `occurred_at`, `copy`, `constructor` and `prototype` are reserved: the first two belong to the envelope. Leave it out or send `{}` for none. `null` is refused. |
