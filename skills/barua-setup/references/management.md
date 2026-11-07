@@ -19,8 +19,11 @@ for consent and transactional email.
 
 `BARUA_MANAGEMENT_KEY` is a workspace-specific `mk_` secret. It authorizes
 `https://barua.ai/api/management/v1`; an `ik_` event key cannot call that API.
-The owner creates the connection through Settings → Agents or the owner API
-below. The owner selects permissions and review checkpoints. An expiry is optional.
+The owner creates the connection through initial browser onboarding, Settings →
+Agents or the owner API below. New browser-onboarding connections start with all
+permissions selected and full delegation; the owner can change either before
+creating access. Settings defaults and saved grants are unchanged. The owner
+selects permissions and review checkpoints. An expiry is optional.
 `review: []` delegates the permitted actions without an extra review. Checkpoints
 can be any of `plan`, `brand`, `play`, `launch`, `campaign`, and apply to later changes too.
 Full delegation does not add permissions. Check the actual grant before saying
