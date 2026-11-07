@@ -55,6 +55,7 @@ the evidence came from a local fixture or a live check.
 | `segment` | `manage.mjs` | `GET /segments/:id` | Connection; one of segment:write, campaign:write, campaign:send |
 | `segment-fields` | `manage.mjs` | `GET /segment-fields` | Connection; one of segment:write, campaign:write, campaign:send |
 | `campaigns` | `manage.mjs` | `GET /campaigns` | Connection; one of segment:write, campaign:write, campaign:send |
+| `service-events` | `manage.mjs` | `GET /service-events` | play:write; follow `next` with `--after` |
 | `campaign` | `manage.mjs` | `GET /campaigns/:id` | Connection; one of segment:write, campaign:write, campaign:send |
 | `campaign-recipients` | `manage.mjs` | `GET /campaigns/:id/recipients` | people:read; one of segment:write, campaign:write, campaign:send |
 | `campaign-job` | `manage.mjs` | `GET /campaign-jobs/:id` | Connection; one of segment:write, campaign:write, campaign:send |

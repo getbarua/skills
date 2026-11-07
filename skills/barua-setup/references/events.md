@@ -44,6 +44,7 @@ The skill's `references/emit.ts` sends and retries this way for Node, Deno, Bun 
 | `external_id` | Required. Your user id for this person, 1 to 256 characters, counted the way the identities feed counts them: an emoji counts as 2. |
 | `occurred_at` | Required. The source row's timestamp, in ISO 8601 with a timezone. It must be after 2000 and at most 5 minutes after Barua receives the event, so send the time the row records. |
 | `properties` | Optional. An object with the event's properties below, at most 8 KiB as JSON. A `null` optional property counts as absent. |
+| `service_email` | Optional on approved custom events only. `{to, subject, text, language, html?}` carries one complete service email outside ordinary properties. Requires explicit `service:write` and an enabled service policy; never sends in backfill or with a test key. |
 <!-- /docs-check:envelope -->
 
 Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `churned` are declarable: when your product has no such moment, your tracking plan marks the event `not_emitted` with a reason. The rest are optional, from `consent_updated` on, so the plan can't declare them. Your plan can't list an optional event either, so Barua suggests plays that start from one only after it has accepted one sent with your live key. Events sent with a test key don't count.
@@ -362,9 +363,125 @@ Every error from `/api/integrations/v1` has the body `{"code": "...", "message":
 | `brand_invalid` | 400 | Fix the token named in `message` and send the whole proposal again. Send only tokens you found in the repo. |
 | `capability_required` | 403 | Use a key with permission for this action. A workspace owner can authorize a new key. |
 | `history_permission_required` | 403 | Use a key with history:write permission for backfills or events older than 72 hours. Keep retrying an accepted request with its original key and Idempotency-Key. |
+| `service_policy_required` | 409 | Approve and enable a service policy for this custom event, then retry the unchanged event. |
 <!-- /docs-check:error-codes -->
 
+## Service email
+
+Use a service email for an expected product message, such as a completed meeting
+recap. The producer supplies its final words and language. Barua preserves the
+plain text and optional safe HTML layout; it makes no model call and creates no
+campaign. Each occurrence and recipient needs a stable, distinct `event_id`.
+
+First approve the custom event in the tracking plan, then use the management
+action `service-event.configure` with `{eventName, purpose, enabled, expectedVersion}`.
+`expectedVersion` is 0 for a new policy. This requires `play:write` and the
+connection's Play review checkpoint. Read current versions with `manage.mjs
+service-events` or `GET /api/management/v1/service-events`; follow `next` with
+`after`. A plan approval alone does not authorize email.
+
+Mint an event key with both `events:write` and `service:write`. Creating it requires
+management `setup:write` plus `play:write`. Old keys with no capability list do
+not gain service-email authority. The sender domain must be ready, live event
+intake enabled, and workspace sending unpaused. `sending.pause` also disables
+service policies; configure the exact policy again to restart it.
+
+```json
+{
+  "records": [{
+    "event_id": "meeting_recap_ready:meeting-4812-recipient-991",
+    "name": "meeting_recap_ready",
+    "external_id": "recipient-991",
+    "occurred_at": "2026-11-06T10:15:00Z",
+    "properties": {},
+    "service_email": {
+      "to": "reader@example.com",
+      "subject": "Meeting recap",
+      "text": "Summary\nWe agreed to send the updated delivery plan on Friday.\n\nNext steps\nKari will send the plan.",
+      "language": "en"
+    }
+  }]
+}
+```
+
+The policy must describe a service purpose; it does not grant marketing consent.
+`to` is normalized as an email, at most 254 UTF-16 code units to match the
+shared sender. A missing external identity becomes a contact
+without a fake signup. A canonically equivalent alias freezes the resolved
+identity's current address. An existing different or invalidated mailbox is refused,
+and later identity changes never redirect the frozen email to another person.
+
+`subject` is nonblank, single-line text, at most 200 Unicode characters. `text`
+is nonblank, at most 65,536 UTF-8 bytes; tab, CR and LF are allowed. Other control
+characters and unpaired surrogates are refused. `language` is a valid BCP 47 tag,
+at most 35 characters. All four fields are required. Optional `html` is at most
+131,072 UTF-8 bytes before and after canonicalization; unknown fields are refused.
+Subject and text are preserved exactly, without truncation. HTML is parsed and
+serialized from an inert email allowlist: html/head/meta/title/body, tables,
+headings, paragraphs, lists and inline text with safe inline styles. Use only
+charset and viewport metadata. Comments, scripts, forms,
+stylesheets, resource-loading CSS and hiding declarations such as `display:none` are refused. Supported
+attributes cover table sizing/alignment, `role="presentation"`, `lang`, and
+decorative `aria-hidden="true"`. Send the complete plain-text alternative too.
+Anchors require an absolute HTTPS `href`, without credentials, whitespace,
+controls or backslashes. Query values and fragments are kept unchanged, so
+source timestamps and signed access parameters survive. Optional `target` is
+`_blank` or `_self`; optional `rel` accepts `noopener`, `noreferrer`, `nofollow`.
+Barua adds `noopener noreferrer` before hashing and checks the final HTML size.
+It never fetches, follows redirects, tracks or rewrites these links. The producer
+owns destination safety, recipient access and link lifetime. `ping`, `download`
+and attribution attributes are refused. Wait for link-aware API/worker deployment
+before sending anchors; previously frozen messages do not gain links.
+One static logo is allowed with `img`: an absolute HTTPS `src` ending in `.png`,
+`.jpg`, `.jpeg` or `.webp`, no query or fragment, and no known tracker URL or
+opaque recipient-like path. Require `alt` with a letter/number (maximum 200
+Unicode characters) and integer `width`/`height` from 16 through 2048 pixels.
+Image styles are limited to `display:block` or `inline-block`, `max-width:100%`,
+and `height:auto`; no `srcset`, events, hiding styles on the image, data/CID,
+SVG or GIF. Attribute checks do not prove visibility within surrounding layout.
+The URL stays exact. Barua does not fetch or verify its file bytes or redirects;
+the email client or proxy may fetch it and expose request metadata to its host.
+Use a stable public raster asset shared across recipients. The producer owns
+asset type, privacy and availability; URL checks cannot prove an image does not
+track. Wait for image-aware deployment before sending it. Logo changes also
+change the immutable fingerprint; existing messages are not updated or resent.
+Without `html`, Barua uses the existing escaped-text HTML. Canonical HTML joins
+the immutable payload fingerprint, so changing only the layout under an existing
+event ID conflicts. Do not invent a new occurrence to resend an already submitted
+message; inspect its original delivery status first.
+Ordinary properties still have their 8 KiB/500-character limits. A live request
+still allows at most 100 events and 256 KiB total, so batch by bytes too.
+
+Test keys validate without creating people, deliveries or emails. Backfill
+service emails are refused. Live admission may return 409 `service_policy_required`
+if current approval is missing. After 202, follow the receipt until each item is
+applied or explicitly failed; a failed item may have no delivery row.
+
+`GET /api/integrations/v1/service-events/{URL-encoded-event_id}` reads one delivery
+using its originating live key with `service:write`. It returns `delivery_id`,
+`event_id`, `status`, `decision_id`, `draft_id`, `message_id`, `reason` and
+`updated_at`, without addresses or message bodies. A 404 means no accessible
+delivery has been applied; it does not prove an earlier request failed.
+
+| Status | Meaning |
+| --- | --- |
+| `queued`, `held`, `drafted` | Waiting; no confirmed provider acceptance. |
+| `accepted` | The provider accepted the message. This does not prove inbox delivery. |
+| `delivered` | A provider delivery event was recorded. |
+| `failed`, `cancelled` | A terminal failure or cancellation; inspect `reason`. |
+| `unconfirmed` | A handoff may have happened; never submit a replacement email. |
+
+Repeating the exact event reuses its durable delivery. A changed body, recipient,
+language or subject under the same event ID conflicts. Do not change IDs to
+work around a failure. Provider acceptance and unknown handoffs permanently
+prevent automatic resends. Erasure removes addresses and content while retaining
+minimal non-identifying duplicate-prevention evidence. The shared sender still
+checks hard suppression, identity, domain health, workspace state and capacity.
+
 ## Custom events
+
+Custom events may also carry a complete [service email](#service-email). This is
+separate from ordinary custom properties and from marketing Plays.
 
 Barua accepts your own named events and typed properties. Order events are built-in examples, not the full event catalog. For a moment only your product has, such as a report export, propose custom events with `POST /api/integrations/v1/plan`, or `plan.propose` with management access. Send the full set every time: an approved event you leave out is removed once the new version is approved. Use `not_emitted` for each declarable core event your product has no source for.
 

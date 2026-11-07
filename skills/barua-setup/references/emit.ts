@@ -51,6 +51,9 @@ export interface BaruaEvent {
   external_id: string;
   occurred_at: string;
   properties?: Record<string, unknown>;
+  /** Custom service event only; requires explicit service:write and an
+   * approved policy. A successful intake receipt is not delivery proof. */
+  service_email?: { to: string; subject: string; text: string; language: string };
 }
 export interface BaruaEmitResult { ok: boolean; status: number; body: unknown }
 export interface BaruaEmitterOptions {

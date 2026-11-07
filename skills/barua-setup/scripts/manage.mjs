@@ -22,7 +22,7 @@ const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
           action, resume, cancel, review, wait, proof, review-package, segments, segment, campaigns,
-          campaign, campaign-recipients, campaign-job, segment-fields, play-catalog, play, play-job,
+          campaign, campaign-recipients, campaign-job, segment-fields, service-events, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
           play-feedback, play-paths, discovery, discovery-opportunity,
           people, people-search, person, person-activity, person-events, pixel, sample, sample-preview
@@ -54,7 +54,7 @@ Set BARUA_WORKSPACE_ID for management calls too to bind the selected workspace.
 --version <n>            immutable opportunity version for discovery-opportunity
 --after-version <uuid>   nextVersion from play detail, to read older versions
 --after <cursor>         next cursor from operations, segment/campaign lists,
-                         campaign recipients, discovery or Play history pages
+                         campaign recipients, discovery, service-events or Play history pages
 --status <status>        play-admissions filter: blocked, admitted, expired, cancelled
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
@@ -274,7 +274,7 @@ async function main() {
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
-    'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields',
+    'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields','service-events',
     'sample','sample-preview','pixel','play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
   const hasId = ['sample','sample-preview','recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
@@ -304,7 +304,7 @@ async function main() {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
   }
   const playHistory = ['play-runs','play-trace','play-admissions','play-feedback'].includes(command);
-  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients','discovery'].includes(command))
+  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients','discovery','service-events'].includes(command))
     || !args.after || args.after.length > (playHistory ? 256 : 2048) || /[\u0000-\u001f\u007f]/.test(args.after))) {
     fail('invalid_flag', 'Use --after only with a list or history page and its returned cursor.');
   }
@@ -504,7 +504,7 @@ async function main() {
       const query = new URLSearchParams({ ...(args.limit ? { limit: args.limit } : {}), ...(args.cursor ? { cursor: args.cursor } : {}) });
       return await finish(await request(`${prefix}${path}${query.size ? `?${query}` : ''}`));
     }
-    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields'].includes(command)) {
+    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields','service-events'].includes(command)) {
       return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     }
     const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs' }[command];

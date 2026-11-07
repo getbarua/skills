@@ -11,6 +11,8 @@
 // as Barua sent it, so a change to the event contract, such as a new core
 // event (checkout_started) or a list property (line_items), needs no change
 // here, and a copy installed before the change still reports it in full.
+// That includes optional service_email.html validation failures. This helper
+// reads test-event validation; it never proves service-email delivery or layout.
 import { parseArgs } from 'node:util';
 import { readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';

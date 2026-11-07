@@ -210,6 +210,7 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `review-package --output-dir <new private directory>` | Reads setup, the full event plan, exact play revisions and synthetic previews; writes `index.html` and `review.json`. Optional `--input-file` adds source evidence; optional `--proof-id` reads an existing proof. See [review-package.md](review-package.md). |
 | `segment-fields` | Approved `segmentFields` for audience rules and `mergeFields` for personalization |
 | `segments`, `campaigns` | Saved segment or campaign summaries; use `--after` for another page |
+| `service-events` | Custom service email policies and exact versions; requires `play:write`; follow `next` with `--after` |
 | `segment --id <segment-id>`, `campaign --id <campaign-id>` | Current detail, versions and prepared previews |
 | `campaign-job --id <job-id>` | One background job's status, error and progress counts |
 | `campaign-recipients --id <campaign-id>` | Current prepared audience results; requires `people:read`; use `--after` for another page |
@@ -267,6 +268,7 @@ checkpoint means the permission alone authorizes it.
 | `campaign.resume` | `campaign:send` | `campaign` |
 | `campaign.cancel` | `campaign:send` | |
 | `key.create` | `setup:write` | |
+| `service-event.configure` | `play:write` | `play` |
 | `pixel.key.create` | `setup:write` | |
 | `setup.sample.prepare` | `setup:write` | |
 | `setup.sample.verify-owner` | `test:send` | |
@@ -321,6 +323,7 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | Route under `/api/management/v1` | Behavior |
 | --- | --- |
 | `GET /capabilities` | Current action schemas and grant |
+| `GET /service-events` | Custom service email policies; requires `play:write`, takes `after`, returns `policies` and `next` |
 | `GET /segment-fields` | Current `{segmentFields,mergeFields}` catalogs; use their exact paths and types |
 | `GET /segments`, `/segments/:id` | Saved segments and current detail; lists take `after` and return `next` |
 | `GET /campaigns`, `/campaigns/:id` | Campaign summaries or full prepared detail; lists take `after` and return `next` |
@@ -1114,6 +1117,8 @@ uncertain response or a 429/503 error. Keep the same request and idempotency key
 is full. Wait for older requests to leave that window, then retry the same
 request. Cancelling work does not reset this budget. Necessary emergency stops
 remain available; repeatedly requesting an already-stopped state does not.
+An enabled service-event policy makes `sending.pause` necessary even if Plays
+are already paused and no campaign is active; the pause disables those policies.
 
 A permanently invalid key, revision or job returns the saved operation with
 `status: "failed"` and an `error_code`; it does not occupy a pending slot.
