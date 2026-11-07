@@ -405,6 +405,13 @@ Use this path when the owner names a specific event, including in a new workspac
 Recommend a broader setup review once; it is optional. Do not start full journey
 planning, campaigns, pixel setup or history imports to complete this task.
 
+Before editing emitters, read [Keys](#keys), [Emitter rules](#emitter-rules),
+[The event](#the-event), [Send events](#send-events) and [Custom events](#custom-events),
+plus the [implementation rules](/skills/barua-setup/references/event-only.md#always) and [safety rules](/skills/barua-setup/references/event-only.md#never).
+Read each complete named section, including required core facts and custom properties;
+do not load unrelated brand, lifecycle or full-setup procedures. Verification outcomes
+use the [exit-code contract](/skills/barua-setup/references/event-only.md#exit-codes).
+
 1. Read the current plan before editing it. With management access, use
    `node "$BARUA_SKILL/scripts/inspect.mjs" plan` after the capabilities/workspace
    check in [quickstart.md](https://barua.ai/skills/barua-setup/references/quickstart.md). With event-only access, verify the
@@ -441,6 +448,8 @@ its status, emitter check or receipt result, and sample status when requested.
 Include only relevant pending owner operations and the sample preview if made.
 A full review package and journey HTML/JSON are optional for this path. Existing
 workspace readiness does not have to reach zero remaining steps.
+Finish with the [next onboarding task](https://barua.ai/skills/barua-setup/SKILL.md#next-onboarding-task),
+respecting the owner's completed, skipped and deferred steps.
 
 For customer automation, continue with [the Play contract](management.md#propose-and-operate-a-play)
 only when requested. Custom-event Plays currently use the person's latest
@@ -549,6 +558,9 @@ snapshot can omit a step that is now ready.
    chat even when the linked artifact also contains it. State the verified
    result and remaining work briefly around the block; preserve its exact lines
    when shortening the reply.
+
+Follow [Next onboarding task](https://barua.ai/skills/barua-setup/SKILL.md#next-onboarding-task) to recommend
+one current next action or state verified completion.
 
 If the fresh setup read fails, retain the last verified block and name its age
 and the failed read. Do not claim the current owner steps were verified.

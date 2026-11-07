@@ -95,8 +95,9 @@ is never implied by a connection.
 
 These reads require `setup:write`, current terms and the exact workspace. Sample
 reads are also restricted to the granting owner. See the
-[agent quickstart](/skills/barua-setup/references/quickstart.md) for the complete
-prepare, mailbox confirmation, send and key-recovery sequence.
+[owner sample](/skills/barua-setup/references/owner-sample.md) for the complete
+prepare, mailbox confirmation and send sequence. [Optional setup](/skills/barua-setup/references/optional-setup.md#pixel-and-history)
+covers pixel recovery and explicit replacement.
 
 | Helper command | API route | Input |
 | --- | --- | --- |
@@ -744,6 +745,10 @@ requests to resulting revisions and distinguishes approved, discarded and
 superseded work. Accepted guidance stays with that Play; rejected proposals
 do not become standing writing instructions.
 
+## Operation recovery and owner checkpoints
+
+Read this section before submitting or resuming any management action.
+
 Operation pages return up to 20 rows and a `next` cursor. Pass it as `after`
 until `next` is null. Use `status=awaiting_approval` to collect pending reviews
 without walking completed history. List summaries omit `input`, `result` and `authority`;
@@ -1050,6 +1055,9 @@ review flow under the current grant.
    made during this run.
 
 ## Finish and hand off
+
+Follow [Next onboarding task](https://barua.ai/skills/barua-setup/SKILL.md#next-onboarding-task) for both narrow
+tasks and full setup: recommend one relevant next action or state verified completion.
 
 For a narrow event or owner-sample task, reread the relevant plan or sample
 status after the last action. Report its saved version/status and actual
