@@ -26,7 +26,7 @@ These are alternatives, not a sequence.
 | Requested outcome | Read before the corresponding action |
 | --- | --- |
 | Send a test email to the owner | [Owner sample](references/owner-sample.md). No events, DNS or journey plan required. |
-| Add or fix one event | [Start with one event](references/events.md#start-with-one-event), its linked event contract and server-delivery rules. Complete product emails use [Service email](references/events.md#service-email), with optional safe HTML, HTTPS links, one static logo and required plain text. Preserve the existing plan and pending work. |
+| Add or fix one event | [Start with one event](references/events.md#start-with-one-event), its linked event contract and server-delivery rules. Complete product emails use [Service email](references/events.md#service-email), with optional safe HTML, HTTPS links, a static logo or dark-mode pair, and required plain text. Preserve the existing plan and pending work. |
 | Prepare a segment or campaign | [Campaign procedure](references/management.md#send-one-campaign-to-a-saved-segment). Preparation and sending have separate permissions. |
 | Add or change a Play | [Exact Play procedure](references/management.md#propose-and-operate-a-play). Reconcile the saved revision, policy and previews before approval, even with full delegation. |
 | Full setup or launch | [Complete setup](references/management.md#complete-setup-and-later-changes) and [full handoff](references/management.md#finish-and-hand-off). Read each operation's contract before using it. |

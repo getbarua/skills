@@ -419,8 +419,9 @@ at most 35 characters. All four fields are required. Optional `html` is at most
 Subject and text are preserved exactly, without truncation. HTML is parsed and
 serialized from an inert email allowlist: html/head/meta/title/body, tables,
 headings, paragraphs, lists and inline text with safe inline styles. Use only
-charset and viewport metadata. Comments, scripts, forms,
-stylesheets, resource-loading CSS and hiding declarations such as `display:none` are refused. Supported
+charset and viewport metadata, plus the bounded dark-mode profile below. Comments,
+scripts, forms, arbitrary stylesheets, resource-loading CSS and hiding declarations
+such as `display:none` outside that logo profile are refused. Supported
 attributes cover table sizing/alignment, `role="presentation"`, `lang`, and
 decorative `aria-hidden="true"`. Send the complete plain-text alternative too.
 Anchors require an absolute HTTPS `href`, without credentials, whitespace,
@@ -438,13 +439,44 @@ opaque recipient-like path. Require `alt` with a letter/number (maximum 200
 Unicode characters) and integer `width`/`height` from 16 through 2048 pixels.
 Image styles are limited to `display:block` or `inline-block`, `max-width:100%`,
 and `height:auto`; no `srcset`, events, hiding styles on the image, data/CID,
-SVG or GIF. Attribute checks do not prove visibility within surrounding layout.
+SVG or GIF. The paired dark logo below is the sole hiding-style exception.
+Attribute checks do not prove visibility within surrounding layout.
 The URL stays exact. Barua does not fetch or verify its file bytes or redirects;
 the email client or proxy may fetch it and expose request metadata to its host.
 Use a stable public raster asset shared across recipients. The producer owns
 asset type, privacy and availability; URL checks cannot prove an image does not
 track. Wait for image-aware deployment before sending it. Logo changes also
 change the immutable fingerprint; existing messages are not updated or resent.
+
+The optional dark-mode profile allows one `<style>` in `<head>`, without
+attributes. Its first block must be `@media (prefers-color-scheme: dark){...}`.
+Rules select a single `.service-*` class: the suffix starts with a lowercase
+letter followed by at most 40 lowercase letters, digits or hyphens. Each element
+has at most one class, declared in that stylesheet. Each mode allows at most 32
+unique rules. Color declarations accept only `color`, `background-color`,
+`border-color` or `border-top-color`/`border-bottom-color`/`border-left-color`/
+`border-right-color`, with six-digit hex values and mandatory `!important`.
+This overrides inline light colors. No comments, escapes, imports, URLs,
+selector combinations or other at-rules are accepted. Optionally repeat all
+rules after the media block with `[data-ogsc] ` prefixed to every selector;
+these Outlook rules must match the media declarations exactly. Add only
+`<meta name="color-scheme" content="light dark">` and
+`<meta name="supported-color-schemes" content="light dark">` for theme metadata.
+
+A logo pair requires adjacent sibling images, light first, with identical
+`alt`, `width` and `height`. Both obey the existing source/dimension checks.
+Use `class="service-logo-light"` with the exact inline style
+`display:block;max-width:100%;height:auto` and `class="service-logo-dark"` with
+`display:none;max-width:100%;height:auto;mso-hide:all`. The two logo rules must be
+`.service-logo-light{display:none!important}` and
+`.service-logo-dark{display:block!important}`. Those classes are image-only;
+other content cannot change display. A second unpaired image is still refused.
+If the client removes the stylesheet, the light logo remains the visible
+fallback. Some clients force their own colors without supporting image swaps;
+browser theme tests do not certify those clients. Deploy both admission and
+delivery workers with this profile before producers submit it. No migration is
+needed; saved bodies are never rewritten to add a theme.
+
 Without `html`, Barua uses the existing escaped-text HTML. Canonical HTML joins
 the immutable payload fingerprint, so changing only the layout under an existing
 event ID conflicts. Do not invent a new occurrence to resend an already submitted
