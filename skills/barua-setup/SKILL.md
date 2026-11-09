@@ -34,6 +34,7 @@ These are alternatives, not a sequence.
 | Optional pixel or historical import | [Optional setup](references/optional-setup.md). Only when relevant; do not replace installed keys or replay history as live activity. |
 | Activity-based suggestions | [Discovery opportunities](references/management.md#discovery-opportunities). |
 | Delivery or domain troubleshooting | [Deliverability](references/management.md#deliverability) and the requested [inspection](references/inspection.md). |
+| Send the product's Supabase Auth codes | [Workspace sign-in emails](references/management.md#workspace-sign-in-emails). Codes only; the owner approves enabling, and the Supabase hook goes off before disabling. |
 
 ## Work and handoff
 

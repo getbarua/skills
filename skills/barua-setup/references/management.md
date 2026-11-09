@@ -211,6 +211,7 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `segment-fields` | Approved `segmentFields` for audience rules and `mergeFields` for personalization |
 | `segments`, `campaigns` | Saved segment or campaign summaries; use `--after` for another page |
 | `service-events` | Custom service email policies and exact versions; requires `play:write`; follow `next` with `--after` |
+| `auth-email` | Workspace sign-in email state, `generation`, `hookUrl`, caps and counts; requires `setup:write` or `launch:write`; never returns the secret |
 | `segment --id <segment-id>`, `campaign --id <campaign-id>` | Current detail, versions and prepared previews |
 | `campaign-job --id <job-id>` | One background job's status, error and progress counts |
 | `campaign-recipients --id <campaign-id>` | Current prepared audience results; requires `people:read`; use `--after` for another page |
@@ -269,6 +270,8 @@ checkpoint means the permission alone authorizes it.
 | `campaign.cancel` | `campaign:send` | |
 | `key.create` | `setup:write` | |
 | `service-event.configure` | `play:write` | `play` |
+| `auth-email.enable` | `launch:write` | `launch` |
+| `auth-email.disable` | `launch:write` | |
 | `pixel.key.create` | `setup:write` | |
 | `setup.sample.prepare` | `setup:write` | |
 | `setup.sample.verify-owner` | `test:send` | |
@@ -324,6 +327,7 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | --- | --- |
 | `GET /capabilities` | Current action schemas and grant |
 | `GET /service-events` | Custom service email policies; requires `play:write`, takes `after`, returns `policies` and `next` |
+| `GET /auth-email` | Workspace sign-in email settings: `enabled`, `generation`, `hookUrl`, `senderReady`, caps, `lastHour`, `last24Hours`, `disabledReason` |
 | `GET /segment-fields` | Current `{segmentFields,mergeFields}` catalogs; use their exact paths and types |
 | `GET /segments`, `/segments/:id` | Saved segments and current detail; lists take `after` and return `next` |
 | `GET /campaigns`, `/campaigns/:id` | Campaign summaries or full prepared detail; lists take `after` and return `next` |
@@ -486,6 +490,33 @@ Both Google actions require `setup:write`. Use the normal `manage.mjs action`
 helper with one stable idempotency key per operation. No previous-provider
 history import is needed. Reading reports or connecting Google does not prove
 inbox placement.
+
+## Workspace sign-in emails
+
+Barua can send a workspace's Supabase Auth one-time codes through the
+project's Send Email hook, from the active verified sender. Codes only: the
+app verifies with `verifyOtp`. Supabase actions `magiclink`, `signup`,
+`invite`, `recovery` and `reauthentication` are sent; link emails, `email`,
+`email_change` and notification actions are refused.
+
+1. Read `auth-email` and note `generation` (`0` before the first enable) and
+   `senderReady`.
+2. Request `{"action":"auth-email.enable","input":{"expectedGeneration":"<generation>"}}`
+   with a new idempotency key and `--secret-file`. The owner approves the
+   launch checkpoint. `wait --id` with the same secret destination saves the
+   `v1,whsec_...` hook secret; the result carries `hookUrl` and the new
+   `generation`. Only this connection can recover the secret, and only while
+   that generation is enabled.
+3. In the Supabase project, set the Send Email hook URL and secret together
+   and raise the project's email rate limit (Supabase applies it before the
+   hook). Send a code to an address you control and check the sender.
+
+Enabling again replaces both the URL and the secret. `auth-email.disable` is a
+stop action. Turn the Supabase hook off first, then disable: with the hook on
+and sign-in email off, every code request fails. Three complaints or 20 hard
+bounces on codes in 24 hours turn sign-in email off; `auth-email` shows
+`disabledReason`. Caps: 200 codes an hour per workspace, 10 per address.
+`sending.pause` does not stop sign-in codes.
 
 ## Setup and Play reads
 

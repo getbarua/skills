@@ -18,11 +18,13 @@ const credentials = ['BARUA_MANAGEMENT_KEY', 'BARUA_OWNER_TOKEN'].map(name => pr
 // It is not authorization; all other token fields retain credential redaction.
 const reviewSummaries = new WeakSet();
 const discoveryRecords = new WeakSet();
+// Actions whose successful result carries a secret for this connection only.
+const SECRET_ACTIONS = ['key.create', 'pixel.key.create', 'auth-email.enable'];
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
           action, resume, cancel, review, wait, proof, review-package, segments, segment, campaigns,
-          campaign, campaign-recipients, campaign-job, segment-fields, service-events, play-catalog, play, play-job,
+          campaign, campaign-recipients, campaign-job, segment-fields, service-events, auth-email, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
           play-feedback, play-paths, discovery, discovery-opportunity,
           people, people-search, person, person-activity, person-events, pixel, sample, sample-preview
@@ -70,7 +72,7 @@ or external_id from a private JSON body, with optional limit and cursor.
 It is read-only. Keep search details out of command arguments and URLs.
 Profile sections marked unavailable must not be interpreted as empty.
 
-connect, recover-key and action key.create/pixel.key.create require a secret destination before sending.
+connect, recover-key and action key.create/pixel.key.create/auth-email.enable require a secret destination before sending.
 resume and wait require one before executing either key creation operation. Never
 reuse an occupied secret file. A failed secret transfer can be recovered by
 repeating the same creation request or resuming its operation with a new file.
@@ -274,7 +276,7 @@ async function main() {
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
-    'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields','service-events',
+    'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields','service-events','auth-email',
     'sample','sample-preview','pixel','play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
   const hasId = ['sample','sample-preview','recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
@@ -431,13 +433,15 @@ async function main() {
     // Creation/recovery commands succeed only when they deliver the secret;
     // status and owner decisions remain metadata-only reads of that history.
     const managementSecret = ['connect', 'recover-key'].includes(command);
-    if ((managementSecret || (['key.create', 'pixel.key.create'].includes(operation?.action) && operation.status === 'succeeded'
+    if ((managementSecret || (SECRET_ACTIONS.includes(operation?.action) && operation.status === 'succeeded'
       && ['action', 'resume', 'wait'].includes(command))) && response.body?.secret === undefined) {
       fail('secret_unavailable', 'Barua could not recover this key. Check its current access before continuing.');
     }
     let saved = {};
     if (response.body?.secret !== undefined) {
-      const format = managementSecret ? /^mk_[A-Za-z0-9_-]{43}$/ : /^(?:(?:mk|ik)_[A-Za-z0-9_-]{43}|pk_[A-Za-z0-9_-]{43,48})$/;
+      // auth-email.enable returns the Supabase Send Email hook secret.
+      const format = managementSecret ? /^mk_[A-Za-z0-9_-]{43}$/ : operation?.action === 'auth-email.enable' ? /^v1,whsec_[A-Za-z0-9+/]{43}=$/
+        : /^(?:(?:mk|ik)_[A-Za-z0-9_-]{43}|pk_[A-Za-z0-9_-]{43,48})$/;
       if (typeof response.body.secret !== 'string' || !format.test(response.body.secret)) fail('unexpected_response', 'Barua returned an invalid key.');
       credentials.push(response.body.secret);
       saved = await (await ensureSink()).save(response.body.secret);
@@ -483,7 +487,7 @@ async function main() {
       return await collect({ request, redact, base: base.origin, outputDir: args['output-dir'], evidence: body,
         proofId: args['proof-id'], deadline });
     }
-    if (['connect', 'recover-key'].includes(command) || (command === 'action' && ['key.create', 'pixel.key.create'].includes(body.action))) await ensureSink();
+    if (['connect', 'recover-key'].includes(command) || (command === 'action' && SECRET_ACTIONS.includes(body.action))) await ensureSink();
     // Await completion before finally closes/removes a reserved secret file.
     if (command === 'connect') return await finish(await request('/api/agent-connections', 'POST', body));
     if (command === 'recover-key') return await finish(await request(`/api/agent-connections/${args.id}/key`, 'POST'));
@@ -504,7 +508,7 @@ async function main() {
       const query = new URLSearchParams({ ...(args.limit ? { limit: args.limit } : {}), ...(args.cursor ? { cursor: args.cursor } : {}) });
       return await finish(await request(`${prefix}${path}${query.size ? `?${query}` : ''}`));
     }
-    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields','service-events'].includes(command)) {
+    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields','service-events','auth-email'].includes(command)) {
       return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     }
     const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs' }[command];
@@ -621,7 +625,7 @@ async function main() {
     let operation = operationFrom(response.body);
     if (command === 'status') return await finish(response, true);
     if (command === 'resume') {
-      if (['key.create', 'pixel.key.create'].includes(operation.action)) await ensureSink();
+      if (SECRET_ACTIONS.includes(operation.action)) await ensureSink();
       return await finish(await request(`${prefix}/operations/${args.id}/resume`, 'POST', {}), true);
     }
     // A new process resumes the durable operation. No local chat state or
@@ -630,7 +634,7 @@ async function main() {
       try {
         const lease = Date.parse(operation.lease_until ?? '');
         if (operation.status === 'ready' || (operation.status === 'running' && Number.isFinite(lease) && lease <= Date.now())) {
-          if (['key.create', 'pixel.key.create'].includes(operation.action)) await ensureSink();
+          if (SECRET_ACTIONS.includes(operation.action)) await ensureSink();
           const resumed = await request(`${prefix}/operations/${args.id}/resume`, 'POST', {});
           if (resumed.status === 0 && Date.now() >= deadline) break;
           response = resumed;
@@ -654,7 +658,7 @@ async function main() {
     // Status reads intentionally omit secrets, including after another
     // process completed the operation. Reuse its recovery endpoint once;
     // never create a replacement key or imply an unwritten file was saved.
-    if (['key.create', 'pixel.key.create'].includes(operation.action) && operation.status === 'succeeded' && response.body?.secret === undefined) {
+    if (SECRET_ACTIONS.includes(operation.action) && operation.status === 'succeeded' && response.body?.secret === undefined) {
       await ensureSink();
       return await finish(await request(`${prefix}/operations/${args.id}/resume`, 'POST', {}), true);
     }
