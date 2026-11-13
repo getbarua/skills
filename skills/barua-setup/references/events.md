@@ -24,7 +24,7 @@ New keys created by a management connection have explicit capabilities. `events:
 
 ## Emitter rules
 
-- Send after the database commit, from a job queue or the platform's `waitUntil`, else await the send before you respond. The last fallback applies only without a durable queue or outbox. With a queue or outbox, commit the fact and event together and return the product response without awaiting a worker, flush, drain or delivery. The worker awaits HTTP outside database transactions and records the result afterward. On a serverless or edge platform, an unowned send still running after the response can die with the invocation, and its failure log dies with it. A `consent_updated` that turns marketing off goes only through a job queue or an outbox table, because a lost one leaves Barua treating someone who said no as opted in.
+- Send after the database commit, from a job queue or the platform's `waitUntil`, else await the send before you respond. The last fallback applies only without a durable queue or outbox. With a queue or outbox, commit the fact and event together and return the product response without awaiting a worker, flush, drain or delivery. The worker awaits HTTP outside database transactions and records the result afterward. On a serverless or edge platform, an unowned send still running after the response can die with the invocation, and its failure log dies with it. A `consent_updated` or `notification_consent_updated` that turns marketing off goes only through a job queue or an outbox table, because a lost one leaves Barua treating someone who said no as opted in.
 - Retry 429 and 5xx answers, and a send that got no answer at all: a network failure, or no answer within 10 seconds. Barua drops duplicates by `event_id`, so a resend is safe even when the first send arrived. Send the same body each time, up to 5 attempts in all, or fewer to fit the time the send gets. Wait 0.5 seconds before the second attempt and double the wait before each one after it, with random jitter of up to half the wait either way. When an answer carries `Retry-After` as a whole number of seconds, wait that long instead. Never wait more than 30 seconds between attempts, even when `Retry-After` asks for longer.
 - Never retry any other answer. A 4xx other than 429 fails the same way every time, so log it and act on its `fix`.
 - A send went through only when Barua answers 202 with `receipt_id` and `records`. Treat any other answer as a failed send and log its status. That includes another 2xx.
@@ -70,6 +70,7 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `subscription_started` | optional | Someone started a subscription. `event_id` is `subscription_started:<subscription id>`. |
 | `subscription_cancelled` | optional | Someone asked to cancel a subscription that is still running. `event_id` is `subscription_cancelled:<subscription id>`. |
 | `signed_in` | optional | Someone signed in. Send only their first sign-in of each UTC day. `event_id` is `signed_in:<user id>:<YYYY-MM-DD>`, the UTC date of `occurred_at`. |
+| `notification_consent_updated` | optional | Someone changed their answer about marketing notifications from your app. `event_id` is `notification_consent_updated:<row id>`, one per change. |
 <!-- /docs-check:core-events -->
 
 `use` says where a value may go. A `copy` value may appear in an email Barua writes, such as a project title. A `targeting` value only decides who gets an email and when.
@@ -83,6 +84,7 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `signed_up.type` | string | no | targeting | | 32 |
 | `signed_up.timezone` | timezone | no | targeting | | 64 |
 | `signed_up.locale` | locale | no | targeting | | 35 |
+| `signed_up.marketing_notification_opt_in` | boolean | no | targeting | | |
 | `created.id` | string | yes | targeting | | 256 |
 | `created.title` | string | yes | copy | | 500 |
 | `created.kind` | string | no | copy | | 64 |
@@ -193,6 +195,8 @@ Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `chur
 | `subscription_cancelled.plan` | string | no | copy | | 64 |
 | `subscription_cancelled.reason` | string | no | targeting | | 200 |
 | `subscription_cancelled.ends_at` | timestamp | no | targeting | | |
+| `notification_consent_updated.marketing_notification_opt_in` | boolean | yes | targeting | | |
+| `notification_consent_updated.method` | string | no | targeting | | 64 |
 <!-- /docs-check:core-properties -->
 
 Min is the smallest value a number or integer may take, and `> 0` means it must be above 0. A line's `quantity` is a whole number of at least 1. No amount is below 0. An amount can be 0, such as an order a discount pays in full, except a refund's `amount`, which is above 0 because a refund of 0 moved no money. Max is a length in characters, or for an array the most entries it holds. An array is a list of objects, one per line of the order, checkout, shipment or refund. A `date` is one calendar day written `YYYY-MM-DD`, such as `2026-10-12`. It has no time, and it must be a real day. A `timezone` is a time zone name the IANA database knows, such as `Europe/Oslo` or `UTC`. Barua refuses an offset such as `+01:00`. A `locale` is a BCP 47 language tag, such as `en-US` or `zh-Hant-TW`. Its own `use` is `targeting`, because Barua never puts a whole list in an email; each entry field has its own `use`. Required on an entry field means every entry has it.
@@ -267,6 +271,10 @@ Stripe's `charge.refunded` fires for partial refunds too, and its charge doesn't
 Stripe's `invoice.payment_failed` has no core event. When the product emails people about a failed payment, propose a custom `payment_failed` event with an `invoice_id` and an `update_payment_url` the email links to. Give it the `amount` and `currency` due as well, from the invoice's `amount_due` and `currency` through `stripeAmount`, and make both required, because a custom event has no rule that keeps the two together. A play on it is marketing email. Only Barua's own receipt and order updates, from the core order events, go out without marketing consent.
 
 Consent: send `marketing_opt_in: false` only for a recorded negative choice, such as an unchecked checkbox submitted with signup or someone turning marketing email off. Preserve an actual boolean `false` from that stored preference; a truthiness check must not drop it. Leave the property out when there is no recorded choice. Under double opt-in, send `true` when they confirm their address, never when they submit the form.
+
+`marketing_notification_opt_in` is someone's answer about marketing notifications from your app on their phone. It's separate from the email answer, `marketing_opt_in`. Neither one answers for the other. Send it on `signed_up` when your app asks at sign-up, and send a `notification_consent_updated` each time the answer changes, such as at a later login prompt or a switch in settings. People who signed up before your app asked can answer only through `notification_consent_updated`. Barua records the answer now, and without a recorded answer it reads the answer as no. Sending marketing notifications arrives with the notifications channel.
+
+Give every change a new `event_id` from your own row for that answer, because a reused one comes back `event_id_conflict` and records nothing. Send answers with your live key: Barua only checks an event sent with a test key, so a test-key answer records nothing. Stamp `occurred_at` with the current time when the person answers. The newest `occurred_at` wins, so an answer stamped earlier than one Barua already has doesn't count. When two have the same `occurred_at`, the one Barua received last wins. Then follow the receipt with `GET /api/integrations/v1/receipts/{receipt_id}` until the answer's item is `applied`. Send a no only from a job queue or an outbox, because a lost one keeps their earlier yes. `notification_consent_updated.method` records how the answer was given, such as `signup_form` or `settings`. It is a record for you, and no play reads it.
 
 ## Send events
 
