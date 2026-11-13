@@ -36,6 +36,7 @@ These are alternatives, not a sequence.
 | Delivery or domain troubleshooting | [Deliverability](references/management.md#deliverability) and the requested [inspection](references/inspection.md). |
 | Send the product's Supabase Auth codes | [Workspace sign-in emails](references/management.md#workspace-sign-in-emails). Codes only; the owner approves enabling, and the Supabase hook goes off before disabling. |
 | Prepare phone notifications for an iPhone app | [Phone notifications](references/management.md#phone-notifications). The helper reads the Apple key file itself; the owner approves turning on and, separately, marketing. |
+| Register people's iPhones from the backend | [Phone devices](references/events.md#phone-devices). Mint a new live key with `devices:write`; the app sends its token to the backend, never to Barua. |
 
 ## Work and handoff
 

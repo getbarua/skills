@@ -530,8 +530,9 @@ bounces on codes in 24 hours turn sign-in email off; `auth-email` shows
 ## Phone notifications
 
 Barua is adding phone notifications for iPhone apps. This release stores the
-app's Apple key and records the owner's approvals. Registering devices and
-sending arrive in following releases; nothing is sent yet.
+app's Apple key, records the owner's approvals and lets the workspace's
+backend register people's phones. Sending arrives in a following release;
+nothing is sent yet.
 
 1. Read `notifications`. Note `generation` for the switch and
    `appsRevision` for app changes (`0` until the first upload).
@@ -552,6 +553,13 @@ sending arrive in following releases; nothing is sent yet.
    2,000 characters) records that the app asks each person in its own words
    and lets them say no later in the app. It needs `marketing:attest`; a
    connection without it is refused whatever its review list holds.
+5. For the backend that registers devices, mint a new live key with
+   `{"action":"key.create","input":{"mode":"live","label":"Device registration","capabilities":["devices:write"]}}`
+   and a `--secret-file` or `--secret-command-file`. It needs `setup:write`.
+   An existing key never gains `devices:write`. The backend then calls
+   [`PUT` and `DELETE /devices`](events.md#phone-devices); registering does
+   not need notifications to be on. Each app in `notifications` shows its
+   live `devices` count.
 
 `appsRevision` rises by one on every upload and delete in the workspace, so
 read `notifications` again before the next app change. To replace a key,
@@ -1222,6 +1230,8 @@ Its earlier provider work may have completed even though the response was lost.
 Event keys remain a separate boundary. New management-created keys carry
 explicit capabilities. `events:write` admits current events; `history:write`
 is additionally required for backfill and live occurrences older than 72 hours.
+`devices:write` registers phones and needs `setup:write` to mint; an existing
+key never gains it.
 An exact already accepted retry stays retryable with its original key and
 idempotency key. `people:read` and `people:erase` are separate. These restricted
 keys can read only their own receipts. Existing legacy keys keep their prior

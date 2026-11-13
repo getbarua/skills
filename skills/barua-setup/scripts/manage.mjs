@@ -82,6 +82,8 @@ keyId, teamId or a key. Both refuse unless expectedRevision is the workspace's
 current appsRevision from notifications. It rises on every upload and delete, so
 read notifications again after either. Turn notifications on or off and
 record the marketing statement with action (notifications.enable, .disable, .marketing).
+The backend that registers devices needs a new live key: action key.create with
+capabilities ["devices:write"], which setup:write may mint.
 connect, recover-key and action key.create/pixel.key.create/auth-email.enable require a secret destination before sending.
 resume and wait require one before executing either key creation operation. Never
 reuse an occupied secret file. A failed secret transfer can be recovered by

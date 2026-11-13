@@ -57,7 +57,7 @@ the evidence came from a local fixture or a live check.
 | `campaigns` | `manage.mjs` | `GET /campaigns` | Connection; one of segment:write, campaign:write, campaign:send |
 | `service-events` | `manage.mjs` | `GET /service-events` | play:write; follow `next` with `--after` |
 | `auth-email` | `manage.mjs` | `GET /auth-email` | Connection; one of setup:write, launch:write; never returns the hook secret |
-| `notifications` | `manage.mjs` | `GET /notifications` | Connection; one of setup:write, launch:write; never returns an Apple key |
+| `notifications` | `manage.mjs` | `GET /notifications` | Connection; one of setup:write, launch:write; never returns an Apple key or a device token; each app has its live `devices` count |
 | `campaign` | `manage.mjs` | `GET /campaigns/:id` | Connection; one of segment:write, campaign:write, campaign:send |
 | `campaign-recipients` | `manage.mjs` | `GET /campaigns/:id/recipients` | people:read; one of segment:write, campaign:write, campaign:send |
 | `campaign-job` | `manage.mjs` | `GET /campaign-jobs/:id` | Connection; one of segment:write, campaign:write, campaign:send |

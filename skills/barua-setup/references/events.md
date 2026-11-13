@@ -20,7 +20,7 @@ Keys are `test` or `live`. A test key runs the same checks on each event as the 
 
 An owner or authorized management connection enables live events after setup checks pass. Until they're on for yours, a live key gets 403 `feed_not_enabled`. A test key works either way. Erasing a person needs a live key; a test key gets 403 `test_key_not_allowed`.
 
-New keys created by a management connection have explicit capabilities. `events:write` admits current events. `history:write` is additionally required for backfill and live events older than 72 hours. Accepted retries retain their original key and idempotency key, even after the event ages past that threshold. Customer lookup needs `people:read`; erasure needs `people:erase`. Restricted keys can read only their own receipts and cannot propose plans or brands; use management actions for those. Existing keys without a capability list keep their prior behavior. Revoking a management connection leaves deployed event keys working, so revoke those separately when intended.
+New keys created by a management connection have explicit capabilities. `events:write` admits current events. `history:write` is additionally required for backfill and live events older than 72 hours. Accepted retries retain their original key and idempotency key, even after the event ages past that threshold. Customer lookup needs `people:read`; erasure needs `people:erase`; [phone devices](#phone-devices) need `devices:write`, which an existing key never gains. Restricted keys can read only their own receipts and cannot propose plans or brands; use management actions for those. Existing keys without a capability list keep their prior behavior. Revoking a management connection leaves deployed event keys working, so revoke those separately when intended.
 
 ## Emitter rules
 
@@ -372,6 +372,8 @@ Every error from `/api/integrations/v1` has the body `{"code": "...", "message":
 | `capability_required` | 403 | Use a key with permission for this action. A workspace owner can authorize a new key. |
 | `history_permission_required` | 403 | Use a key with history:write permission for backfills or events older than 72 hours. Keep retrying an accepted request with its original key and Idempotency-Key. |
 | `service_policy_required` | 409 | Approve and enable a service policy for this custom event, then retry the unchanged event. |
+| `notification_app_not_found` | 409 | Upload the Apple key for this app and environment, or send the bundle id and environment you uploaded. |
+| `unknown_identity` | 409 | Send this person's sign-up or first service event and wait until it shows as applied. Then register the device again. |
 <!-- /docs-check:error-codes -->
 
 ## Service email
@@ -689,6 +691,54 @@ The job retries each call until it answers 200 with `"erased": true`, unless the
 Log each failed attempt with the job's id and the answer's `code`, never the email or the key.
 
 Never make the erase a call inside the deletion request, awaited or under `waitUntil`. A 409 asks for two minutes and a 503 can last hours, longer than any request waits, and once the account is deleted nothing else in your product holds the id and the email. A call that fails there leaves the person's data in Barua for good. If your product has no job queue, add a small outbox table for erase jobs, written in the delete's transaction, and a scheduled job that runs the ones that are due and records each answer.
+
+## Phone devices
+
+Your server tells Barua which iPhone belongs to which person, so a later
+release can send phone notifications to it. Nothing is sent yet. The app
+sends its device token to your own backend after sign-in; it never calls
+Barua.
+
+Mint a live key for this with `key.create` and `"capabilities":["devices:write"]`
+([management reference](management.md#phone-notifications)); it needs a
+connection with `setup:write`. An existing key never gains the right and gets
+403 `capability_required`, and a test key gets 403 `test_key_not_allowed`.
+The app's Apple key must be uploaded first. Notifications don't need to be on.
+
+`PUT /api/integrations/v1/devices` with a JSON body of at most 4 KiB:
+
+```json
+{"provider":"apns","app":"com.example.app","environment":"production","token":"6f1c9a2e4b7d0835c2e9f14a7b3d6e0c58a1f2b9d4e7c03a6b8f1e2d5c9a4b70","external_id":"4812"}
+```
+
+`app` is the bundle id and `environment` is `production` for App Store and
+TestFlight builds or `sandbox` for builds run from Xcode, as uploaded.
+`token` is the token's bytes as hex, 16 to 200 characters in either case.
+Encode it in the app with
+`deviceToken.map { String(format: "%02x", $0) }.joined()` and send the
+current one at every launch. `external_id` is the id your events use. The
+answer is 200 `{"registered":true,"registered_at":"...","bound_at":"..."}`,
+never the token. Repeating it is safe and keeps `bound_at`; the same token for
+another person moves the device and sets a new `bound_at`. A person keeps at
+most 10 devices; one more replaces one Apple reported gone, or else the one
+registered longest ago.
+
+| Answer | What the backend does |
+| --- | --- |
+| 200 | Done. |
+| 409 `unknown_identity` | Barua doesn't know this person yet. Send their `signed_up` or first service event and wait until its receipt shows it applied. Then register again. |
+| 409 `notification_app_not_found` | Upload the Apple key for that bundle id and environment, or fix the body. |
+| 429 | Send the same request after `Retry-After`. |
+| 5xx, or no answer | Retry with backoff; registering is idempotent. |
+
+`DELETE /api/integrations/v1/devices` takes the same body with `external_id`
+optional and answers 200 `{"deleted":true}` or `{"deleted":false}`. It never
+answers 409, and repeating it is harmless. Send `external_id` at sign-out:
+Barua removes the device only while it is bound to that person, so a late
+sign-out cannot remove the next person's registration on a shared phone.
+
+Erasing a person removes their devices, and deleting the app removes its
+devices. An `external_id` used again after an erasure starts with none.
 
 ## Finish an event-only run
 
