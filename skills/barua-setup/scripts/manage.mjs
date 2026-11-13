@@ -24,7 +24,8 @@ const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
           action, resume, cancel, review, wait, proof, review-package, segments, segment, campaigns,
-          campaign, campaign-recipients, campaign-job, segment-fields, service-events, auth-email, play-catalog, play, play-job,
+          campaign, campaign-recipients, campaign-job, segment-fields, service-events, auth-email, notifications,
+          notification-app-upload, notification-app-delete, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
           play-feedback, play-paths, discovery, discovery-opportunity,
           people, people-search, person, person-activity, person-events, pixel, sample, sample-preview
@@ -34,7 +35,10 @@ management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN a
 BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 Set BARUA_WORKSPACE_ID for management calls too to bind the selected workspace.
 
---input-file <file>       JSON body for connect/action/review/people-search; otherwise stdin
+--input-file <file>       JSON body for connect/action/review/people-search and the
+                          notification-app commands; otherwise stdin
+--key-file <file>         notification-app-upload: the Apple .p8 key file. The helper
+                          reads it itself and never prints or returns the key
 --journey-review-file <file>  private source review for plan.propose or brand actions;
                              exact per-Play request for play.propose;
                              exact approval observations for play.approve;
@@ -72,6 +76,12 @@ or external_id from a private JSON body, with optional limit and cursor.
 It is read-only. Keep search details out of command arguments and URLs.
 Profile sections marked unavailable must not be interpreted as empty.
 
+notification-app-upload sends {bundleId, environment, keyId, teamId, expectedRevision}
+with the key from --key-file; notification-app-delete sends the same target without
+keyId, teamId or a key. Both refuse unless expectedRevision is the workspace's
+current appsRevision from notifications. It rises on every upload and delete, so
+read notifications again after either. Turn notifications on or off and
+record the marketing statement with action (notifications.enable, .disable, .marketing).
 connect, recover-key and action key.create/pixel.key.create/auth-email.enable require a secret destination before sending.
 resume and wait require one before executing either key creation operation. Never
 reuse an occupied secret file. A failed secret transfer can be recovered by
@@ -270,14 +280,14 @@ async function main() {
     'output-file': { type: 'string' }, 'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
     'opportunity-id': { type: 'string' }, 'after-version': { type: 'string' },
     'session-id': { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'string' },
-    version: { type: 'string' },
+    version: { type: 'string' }, 'key-file': { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
     'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields','service-events','auth-email',
-    'sample','sample-preview','pixel','play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
+    'notifications','notification-app-upload','notification-app-delete','sample','sample-preview','pixel','play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
   const hasId = ['sample','sample-preview','recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
   if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a UUID.');
@@ -320,7 +330,11 @@ async function main() {
   if (creates ? !/^[!-~]{1,128}$/.test(args['idempotency-key'] ?? '') : args['idempotency-key'] !== undefined) {
     fail('invalid_flag', 'Provide an Idempotency-Key for connect or action.');
   }
-  const writes = ['connect','action','review','proof','play-simulate'].includes(command);
+  const notificationApp = ['notification-app-upload','notification-app-delete'].includes(command);
+  if (command === 'notification-app-upload' ? !args['key-file'] : args['key-file'] !== undefined) {
+    fail('invalid_flag', 'Use --key-file only with notification-app-upload, and always with it.');
+  }
+  const writes = ['connect','action','review','proof','play-simulate'].includes(command) || notificationApp;
   const privateRead = command === 'people-search';
   if (args['bind-stdin'] && (command !== 'proof' || args['input-file'])) fail('invalid_flag', 'Use --bind-stdin only with proof and without --input-file.');
   if (!writes && !privateRead && command !== 'review-package' && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
@@ -351,6 +365,18 @@ async function main() {
     fail('invalid_proof', 'Bind a proof with a JSON object containing only eventId.');
   }
   if (command === 'proof' && body?.eventId) credentials.push(body.eventId);
+  let appleKey;
+  if (notificationApp) {
+    if ('key' in body) fail('invalid_input', 'Pass the key file with --key-file, never inside the JSON body.');
+    if (command === 'notification-app-upload') {
+      appleKey = readPrivateInput(args['key-file'], { maxBytes: 4096, deadline, code: 'key_file_invalid',
+        message: 'Use the .p8 key file from your Apple developer account, at most 4 KiB.' }).text;
+      // redact() hides only strings it was given: the whole key, its base64
+      // body joined, and each line of it. The key is never printed or returned.
+      const lines = appleKey.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('-----'));
+      credentials.push(appleKey, appleKey.trim(), lines.join(''), ...lines.filter(line => line.length >= 16));
+    }
+  }
   if (command === 'action' && (typeof body.action !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input))) {
     fail('invalid_action', 'Send {action, input} with an input object.');
   }
@@ -502,13 +528,20 @@ async function main() {
     if (command === 'sample') return await finish(await request(`${prefix}/setup/samples/${args.id}`));
     if (command === 'pixel') return await finish(await request(`${prefix}/pixel`));
     if (command === 'people-search') return await finish(await request(`${prefix}/people/search`, 'POST', body));
+    // Compare-and-set on expectedRevision, the workspace's appsRevision. It
+    // rises on every upload and delete and never repeats. A retried upload
+    // after a lost success is refused (409), never stored twice. A retried
+    // delete finds the app gone, or is refused when one was uploaded since.
+    // Read notifications then.
+    if (command === 'notification-app-upload') return await finish(await request(`${prefix}/notifications/apps`, 'PUT', { ...body, key: appleKey }));
+    if (command === 'notification-app-delete') return await finish(await request(`${prefix}/notifications/apps`, 'DELETE', body));
     if (peoplePage || command === 'person') {
       const path = command === 'people' ? '/people' : `/people/${args.id}`
         + (command === 'person-activity' ? '/activity' : command === 'person-events' ? `/sessions/${args['session-id']}/events` : '');
       const query = new URLSearchParams({ ...(args.limit ? { limit: args.limit } : {}), ...(args.cursor ? { cursor: args.cursor } : {}) });
       return await finish(await request(`${prefix}${path}${query.size ? `?${query}` : ''}`));
     }
-    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields','service-events','auth-email'].includes(command)) {
+    if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields','service-events','auth-email','notifications'].includes(command)) {
       return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     }
     const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs' }[command];

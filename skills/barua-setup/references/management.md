@@ -212,6 +212,9 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `segments`, `campaigns` | Saved segment or campaign summaries; use `--after` for another page |
 | `service-events` | Custom service email policies and exact versions; requires `play:write`; follow `next` with `--after` |
 | `auth-email` | Workspace sign-in email state, `generation`, `hookUrl`, caps and counts; requires `setup:write` or `launch:write`; never returns the secret |
+| `notifications` | Phone notification switch, `generation`, marketing statement, workspace `version`, `appsRevision` and each app's key id, team id, status and `generation`; requires `setup:write` or `launch:write`; never returns a key |
+| `notification-app-upload --key-file <.p8 file>` | JSON `{bundleId,environment,keyId,teamId,expectedRevision}` with `appsRevision` from `notifications`; requires `setup:write`. The helper reads the key file itself and never prints or returns it |
+| `notification-app-delete` | JSON `{bundleId,environment,expectedRevision}` with `appsRevision` from `notifications`; requires `setup:write`; removes that app and its key |
 | `segment --id <segment-id>`, `campaign --id <campaign-id>` | Current detail, versions and prepared previews |
 | `campaign-job --id <job-id>` | One background job's status, error and progress counts |
 | `campaign-recipients --id <campaign-id>` | Current prepared audience results; requires `people:read`; use `--after` for another page |
@@ -272,6 +275,9 @@ checkpoint means the permission alone authorizes it.
 | `service-event.configure` | `play:write` | `play` |
 | `auth-email.enable` | `launch:write` | `launch` |
 | `auth-email.disable` | `launch:write` | |
+| `notifications.enable` | `launch:write` | `launch` |
+| `notifications.disable` | `launch:write` | |
+| `notifications.marketing` | `marketing:attest` | `launch` |
 | `pixel.key.create` | `setup:write` | |
 | `setup.sample.prepare` | `setup:write` | |
 | `setup.sample.verify-owner` | `test:send` | |
@@ -328,6 +334,9 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `GET /capabilities` | Current action schemas and grant |
 | `GET /service-events` | Custom service email policies; requires `play:write`, takes `after`, returns `policies` and `next` |
 | `GET /auth-email` | Workspace sign-in email settings: `enabled`, `generation`, `hookUrl`, `senderReady`, caps, `lastHour`, `last24Hours`, `disabledReason` |
+| `GET /notifications` | Phone notification settings: `enabled`, `generation`, `marketing` (`enabled`, `attestedAt`, `statement`), workspace `version`, `appsRevision` and `apps` (`id`, `provider`, `bundleId`, `environment`, `keyId`, `teamId`, `status`, `generation`); requires `setup:write` or `launch:write` |
+| `PUT /notifications/apps` | Upload one app's Apple key: `{provider?,bundleId,environment,keyId,teamId,expectedRevision,key}`, at most 8 KiB; requires `setup:write`. Returns the app without its key, and the new `appsRevision` |
+| `DELETE /notifications/apps` | `{provider?,bundleId,environment,expectedRevision}`; requires `setup:write`. Returns `deleted` and `appsRevision` |
 | `GET /segment-fields` | Current `{segmentFields,mergeFields}` catalogs; use their exact paths and types |
 | `GET /segments`, `/segments/:id` | Saved segments and current detail; lists take `after` and return `next` |
 | `GET /campaigns`, `/campaigns/:id` | Campaign summaries or full prepared detail; lists take `after` and return `next` |
@@ -517,6 +526,47 @@ and sign-in email off, every code request fails. Three complaints or 20 hard
 bounces on codes in 24 hours turn sign-in email off; `auth-email` shows
 `disabledReason`. Caps: 200 codes an hour per workspace, 10 per address.
 `sending.pause` does not stop sign-in codes.
+
+## Phone notifications
+
+Barua is adding phone notifications for iPhone apps. This release stores the
+app's Apple key and records the owner's approvals. Registering devices and
+sending arrive in following releases; nothing is sent yet.
+
+1. Read `notifications`. Note `generation` for the switch and
+   `appsRevision` for app changes (`0` until the first upload).
+2. Upload the key with `notification-app-upload --key-file <AuthKey_….p8>` and
+   `{"bundleId":"com.example.app","environment":"production","keyId":"<10 characters>","teamId":"<10 characters>","expectedRevision":<appsRevision>}`.
+   `environment` is `production` for App Store and TestFlight builds and
+   `sandbox` for builds run from Xcode. Upload once per environment the key
+   serves. The helper reads the file itself and never prints or returns the
+   key; Barua stores it encrypted and never shows it again. Barua checks the
+   file and the ids locally. It does not call Apple yet, so a key that Apple
+   refuses shows up at the first real send.
+3. Request `{"action":"notifications.enable","input":{"expectedGeneration":"<generation>"}}`.
+   The owner approves the launch checkpoint. Every enable raises `generation`,
+   even when notifications were already on.
+4. Only for marketing notifications: request
+   `{"action":"notifications.marketing","input":{"enabled":true,"statement":"<owner's words>","expectedVersion":"<version>"}}`
+   with the workspace `version` from `notifications`. The statement (20 to
+   2,000 characters) records that the app asks each person in its own words
+   and lets them say no later in the app. It needs `marketing:attest`; a
+   connection without it is refused whatever its review list holds.
+
+`appsRevision` rises by one on every upload and delete in the workspace, so
+read `notifications` again before the next app change. To replace a key,
+upload again with the current `appsRevision`. A stale `expectedRevision` is
+refused with `action_changed`, which also answers a retried upload that
+already landed and a request that lost to another app change: read
+`notifications` and check the app's `keyId` before repeating. A delete of an
+app already gone answers `deleted:false` and changes nothing.
+`notifications.disable` is a stop action. It turns this channel off and
+leaves the marketing statement and email as they were. Ticking
+marketing off is `notifications.marketing` with `"enabled":false` and a
+statement. A workspace holds at most 20 notification apps (`app_limit`).
+A file that is not a P-256 key in PEM answers `key_invalid` and a malformed
+field `invalid_input`; neither repeats what you sent. `notifications_unavailable`
+(503) means Barua cannot store keys right now; retry the same upload later.
 
 ## Setup and Play reads
 
