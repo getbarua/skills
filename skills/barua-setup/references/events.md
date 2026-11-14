@@ -45,6 +45,8 @@ The skill's `references/emit.ts` sends and retries this way for Node, Deno, Bun 
 | `occurred_at` | Required. The source row's timestamp, in ISO 8601 with a timezone. It must be after 2000 and at most 5 minutes after Barua receives the event, so send the time the row records. |
 | `properties` | Optional. An object with the event's properties below, at most 8 KiB as JSON. A `null` optional property counts as absent. |
 | `service_email` | Optional on approved custom events only. `{to, subject, text, language, html?}` carries one complete service email outside ordinary properties. Requires explicit `service:write` and an enabled service policy; never sends in backfill or with a test key. |
+| `service_notification` | Optional on approved custom events only. `{title, body, data?, expires_in_seconds?}` queues one phone notification for this person. Requires explicit `service:write`, an enabled service policy and phone notifications turned on; never sends in backfill or with a test key. |
+| `marketing_notification` | Optional on approved custom events only. The same fields as `service_notification`, for a marketing notification. Also needs the owner's marketing statement and the person's recorded yes. An event carries at most one notification block. |
 <!-- /docs-check:envelope -->
 
 Every workspace sends `signed_up`. `activated`, `created`, `purchased` and `churned` are declarable: when your product has no such moment, your tracking plan marks the event `not_emitted` with a reason. The rest are optional, from `consent_updated` on, so the plan can't declare them. Your plan can't list an optional event either, so Barua suggests plays that start from one only after it has accepted one sent with your live key. Events sent with a test key don't count.
@@ -374,6 +376,8 @@ Every error from `/api/integrations/v1` has the body `{"code": "...", "message":
 | `service_policy_required` | 409 | Approve and enable a service policy for this custom event, then retry the unchanged event. |
 | `notification_app_not_found` | 409 | Upload the Apple key for this app and environment, or send the bundle id and environment you uploaded. |
 | `unknown_identity` | 409 | Send this person's sign-up or first service event and wait until it shows as applied. Then register the device again. |
+| `notifications_not_enabled` | 409 | Ask the workspace owner to turn on phone notifications, or send these events without the notification block. |
+| `marketing_notifications_not_enabled` | 409 | Ask the workspace owner to turn on marketing notifications. Until then, keep marketing notifications in a request of their own. |
 <!-- /docs-check:error-codes -->
 
 ## Service email
@@ -415,6 +419,8 @@ service policies; configure the exact policy again to restart it.
 ```
 
 The policy must describe a service purpose; it does not grant marketing consent.
+The separate marketing approval, `notifications.marketing`, is what allows
+marketing notifications on approved events ([phone notifications](#phone-notifications)).
 `to` is normalized as an email, at most 254 UTF-16 code units to match the
 shared sender. A missing external identity becomes a contact
 without a fake signup. A canonically equivalent alias freezes the resolved
@@ -739,6 +745,81 @@ sign-out cannot remove the next person's registration on a shared phone.
 
 Erasing a person removes their devices, and deleting the app removes its
 devices. An `external_id` used again after an erasure starts with none.
+
+## Phone notifications
+
+An approved custom event can carry one phone notification for the person it
+names. Barua checks the block and queues it. Sending to Apple
+arrives in a following release, so nothing reaches a phone yet and a
+delivery stays `queued` until then.
+
+A notification uses the event's service policy (`service-event.configure`,
+as for [service email](#service-email)) and the workspace switch
+(`notifications.enable`, [management reference](management.md#phone-notifications)).
+The key is live with `events:write` and `service:write`; a backfill is
+refused. `service_notification` is for a message the person expects.
+`marketing_notification` also needs the owner's marketing statement
+(`notifications.marketing`) and the person's recorded yes.
+
+```json
+{"event_id":"notes_ready:meeting-4812","name":"notes_ready","external_id":"4812","occurred_at":"2026-11-12T09:00:00Z",
+ "service_notification":{"title":"Your notes are ready","body":"Open the app to read them.","data":{"screen":"notes","meeting":"4812"}}}
+```
+
+| Field | Rule |
+| --- | --- |
+| `title` | Required. Nonblank, one line, at most 200 Unicode characters. |
+| `body` | Required. Nonblank text. Line breaks and tabs are allowed. |
+| `data` | Optional. Names and string values your app reads when the person taps. A name is 1 to 64 characters; `aps` is Apple's and refused. |
+| `expires_in_seconds` | Optional. 0 to 2,419,200 (28 days), default 86,400, counted from when Barua accepted the event. |
+
+Barua builds the notification as Apple receives it (an alert with the
+default sound, `data` beside Apple's `aps`) and refuses one over 4,096 bytes.
+A bad field, or both blocks on one event, quarantines that event alone with
+`invalid_property`. The block is part of the event, so the same `event_id`
+resent with the other block is `event_id_conflict`.
+
+409 `notifications_not_enabled` refuses the whole request while the switch
+is off: after a pause or a turn-off, drop the block or stop sending. 409
+`marketing_notifications_not_enabled` refuses the whole request, service
+records included, while the marketing statement is off, so keep marketing
+notifications in a request of their own until it is on.
+
+The target is every live device registered for that `external_id`, across
+the workspace's apps, bound before Barua queued the notification. A merged
+person can hold two identity rows, and only the one named is notified.
+
+For marketing, a missing answer is not an error: the delivery ends
+`no_consent`. Send the person's answer first, with the live key, a new
+`event_id` for every change and the current time
+(`notification_consent_updated`, or `marketing_notification_opt_in` on
+`signed_up`), and wait until it shows as applied. An answer earlier in the
+same request counts. The iPhone permission prompt is not this answer; the
+app needs both. An opt-out counts once Barua has applied it.
+
+Each person gets at most 20 notifications an hour per class and each
+workspace 1,000; the next fails with `person_hourly_cap` or
+`workspace_hourly_cap`. `no_consent` deliveries don't count.
+
+`GET /api/integrations/v1/service-notifications/{URL-encoded-event_id}`, with
+the live key that sent the event and `service:write`, returns
+`delivery_id`, `event_id`, `class`, `status`, `reason` (`{code, message}` or
+null), `devices` (counts of `accepted`, `rejected`, `unknown`, `pending`)
+and `updated_at`. It holds no text and no token. 404 means no delivery this key
+can read has been applied for that event yet.
+
+| Status | Meaning |
+| --- | --- |
+| `queued` | Waiting to send. |
+| `no_devices` | No live device for this person. A device registered later doesn't revive it. |
+| `no_consent` | Marketing without a recorded yes. A later yes doesn't revive it. |
+| `failed` | An hourly cap was spent, or Barua could not queue it; see `reason`. |
+| `cancelled` | The switch, the marketing statement, the policy or the key changed after Barua accepted the event, or the person was erased or merged; see `reason`. |
+| `accepted`, `unconfirmed` | Written by sending, which arrives in a following release. |
+
+Erasing a person removes the stored text and the link to them, and keeps the
+status so a resent event can't queue again. Stored text has no retention
+window yet.
 
 ## Finish an event-only run
 

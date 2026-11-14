@@ -102,6 +102,12 @@ the evidence came from a local fixture or a live check.
 | `email-preview` | `inspect.mjs` | `GET /emails/:id/preview` | people:read + emails:read |
 | `email-raw` | `inspect.mjs` | `GET /emails/:id/raw` | people:read + emails:read |
 
+A single event's phone notification is read with the event key that sent it:
+`GET /api/integrations/v1/service-notifications/{event_id}`
+([events reference](events.md#phone-notifications)). A management key can't
+read it. The answer has the status and a count per device outcome, and no
+notification text.
+
 ## Private inputs and files
 
 Use `manage.mjs discovery` to read discovery status and a page of opportunities.

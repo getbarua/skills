@@ -210,7 +210,7 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `review-package --output-dir <new private directory>` | Reads setup, the full event plan, exact play revisions and synthetic previews; writes `index.html` and `review.json`. Optional `--input-file` adds source evidence; optional `--proof-id` reads an existing proof. See [review-package.md](review-package.md). |
 | `segment-fields` | Approved `segmentFields` for audience rules and `mergeFields` for personalization |
 | `segments`, `campaigns` | Saved segment or campaign summaries; use `--after` for another page |
-| `service-events` | Custom service email policies and exact versions; requires `play:write`; follow `next` with `--after` |
+| `service-events` | Custom service message policies and exact versions; requires `play:write`; follow `next` with `--after` |
 | `auth-email` | Workspace sign-in email state, `generation`, `hookUrl`, caps and counts; requires `setup:write` or `launch:write`; never returns the secret |
 | `notifications` | Phone notification switch, `generation`, marketing statement, workspace `version`, `appsRevision` and each app's key id, team id, status and `generation`; requires `setup:write` or `launch:write`; never returns a key |
 | `notification-app-upload --key-file <.p8 file>` | JSON `{bundleId,environment,keyId,teamId,expectedRevision}` with `appsRevision` from `notifications`; requires `setup:write`. The helper reads the key file itself and never prints or returns it |
@@ -332,7 +332,7 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | Route under `/api/management/v1` | Behavior |
 | --- | --- |
 | `GET /capabilities` | Current action schemas and grant |
-| `GET /service-events` | Custom service email policies; requires `play:write`, takes `after`, returns `policies` and `next` |
+| `GET /service-events` | Custom service message policies; requires `play:write`, takes `after`, returns `policies` and `next` |
 | `GET /auth-email` | Workspace sign-in email settings: `enabled`, `generation`, `hookUrl`, `senderReady`, caps, `lastHour`, `last24Hours`, `disabledReason` |
 | `GET /notifications` | Phone notification settings: `enabled`, `generation`, `marketing` (`enabled`, `attestedAt`, `statement`), workspace `version`, `appsRevision` and `apps` (`id`, `provider`, `bundleId`, `environment`, `keyId`, `teamId`, `status`, `generation`); requires `setup:write` or `launch:write` |
 | `PUT /notifications/apps` | Upload one app's Apple key: `{provider?,bundleId,environment,keyId,teamId,expectedRevision,key}`, at most 8 KiB; requires `setup:write`. Returns the app without its key, and the new `appsRevision` |
@@ -575,6 +575,13 @@ statement. A workspace holds at most 20 notification apps (`app_limit`).
 A file that is not a P-256 key in PEM answers `key_invalid` and a malformed
 field `invalid_input`; neither repeats what you sent. `notifications_unavailable`
 (503) means Barua cannot store keys right now; retry the same upload later.
+
+To attach notifications to events, the custom event needs an enabled service
+policy (`service-event.configure`, as for service email) and the backend's
+event key needs `events:write` and `service:write`; a key minted for service
+email already has both. Barua then queues each notification and reports its
+status, and sends nothing until sending arrives in a following release. The
+full contract is in [the events reference](events.md#phone-notifications).
 
 ## Setup and Play reads
 
