@@ -700,10 +700,9 @@ Never make the erase a call inside the deletion request, awaited or under `waitU
 
 ## Phone devices
 
-Your server tells Barua which iPhone belongs to which person, so a later
-release can send phone notifications to it. Nothing is sent yet. The app
-sends its device token to your own backend after sign-in; it never calls
-Barua.
+Your server tells Barua which iPhone belongs to which person, so Barua can
+send phone notifications to it. The app sends its device token to your own
+backend after sign-in; it never calls Barua.
 
 Mint a live key for this with `key.create` and `"capabilities":["devices:write"]`
 ([management reference](management.md#phone-notifications)); it needs a
@@ -749,9 +748,8 @@ devices. An `external_id` used again after an erasure starts with none.
 ## Phone notifications
 
 An approved custom event can carry one phone notification for the person it
-names. Barua checks the block and queues it. Sending to Apple
-arrives in a following release, so nothing reaches a phone yet and a
-delivery stays `queued` until then.
+names. Barua queues it and hands it to Apple for each of that person's phones
+on its next run, once a minute.
 
 A notification uses the event's service policy (`service-event.configure`,
 as for [service email](#service-email)) and the workspace switch
@@ -810,15 +808,18 @@ can read has been applied for that event yet.
 
 | Status | Meaning |
 | --- | --- |
-| `queued` | Waiting to send. |
-| `no_devices` | No live device for this person. A device registered later doesn't revive it. |
+| `queued` | Waiting to send, or to retry. Barua tries for at most an hour after queueing it, and never past `expires_in_seconds`, so `0` sends nothing. |
+| `no_devices` | No live device for this person, or Apple reported every token gone. A device registered later doesn't revive it. |
 | `no_consent` | Marketing without a recorded yes. A later yes doesn't revive it. |
-| `failed` | An hourly cap was spent, or Barua could not queue it; see `reason`. |
+| `failed` | See `reason`: an hourly cap was spent, Barua could not queue it, Apple refused it for every phone (`apple_refused`, or `wrong_environment` for a token from the other build type), Apple refused the app's key (`app_key_rejected`), or an hour passed without Apple taking it (`expired`). |
 | `cancelled` | The switch, the marketing statement, the policy or the key changed after Barua accepted the event, or the person was erased or merged; see `reason`. |
-| `accepted`, `unconfirmed` | Written by sending, which arrives in a following release. |
+| `accepted` | Apple took it for at least one phone. Apple delivers it when the phone is online; the person's settings decide whether it shows. |
+| `unconfirmed` | A request reached Apple with no answer. Barua never sends it again. |
 
-Erasing a person removes the stored text and the link to them, and keeps the
-status so a resent event can't queue again. Stored text has no retention
+A pause or an erasure stops what has not gone yet, and neither can recall
+what Apple already accepted. Erasing a person
+removes the stored text and the link to them, and keeps the status so a
+resent event can't queue again. Stored text has no retention
 window yet.
 
 ## Finish an event-only run

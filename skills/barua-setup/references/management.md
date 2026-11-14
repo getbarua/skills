@@ -529,10 +529,9 @@ bounces on codes in 24 hours turn sign-in email off; `auth-email` shows
 
 ## Phone notifications
 
-Barua is adding phone notifications for iPhone apps. This release stores the
-app's Apple key, records the owner's approvals and lets the workspace's
-backend register people's phones. Sending arrives in a following release;
-nothing is sent yet.
+Barua sends phone notifications to a workspace's iPhone apps through Apple,
+with the app's own Apple key. Setup stores that key and records the owner's
+approvals, and the workspace's backend registers people's phones.
 
 1. Read `notifications`. Note `generation` for the switch and
    `appsRevision` for app changes (`0` until the first upload).
@@ -542,8 +541,12 @@ nothing is sent yet.
    `sandbox` for builds run from Xcode. Upload once per environment the key
    serves. The helper reads the file itself and never prints or returns the
    key; Barua stores it encrypted and never shows it again. Barua checks the
-   file and the ids locally. It does not call Apple yet, so a key that Apple
-   refuses shows up at the first real send.
+   file and the ids locally, and Apple first sees the key at the first send.
+   If Apple refuses a token Barua has just signed with it, the app's `status`
+   in `notifications` turns `rejected` and the owner gets one email. Its
+   notifications wait up to an hour, then fail with `app_key_rejected`.
+   Uploading a key again returns the app to `active`; Barua also tries the
+   current key once an hour and resumes on its own if Apple accepts it.
 3. Request `{"action":"notifications.enable","input":{"expectedGeneration":"<generation>"}}`.
    The owner approves the launch checkpoint. Every enable raises `generation`,
    even when notifications were already on.
@@ -579,9 +582,9 @@ field `invalid_input`; neither repeats what you sent. `notifications_unavailable
 To attach notifications to events, the custom event needs an enabled service
 policy (`service-event.configure`, as for service email) and the backend's
 event key needs `events:write` and `service:write`; a key minted for service
-email already has both. Barua then queues each notification and reports its
-status, and sends nothing until sending arrives in a following release. The
-full contract is in [the events reference](events.md#phone-notifications).
+email already has both. Barua then hands each notification to Apple and
+reports its status. The full contract is in
+[the events reference](events.md#phone-notifications).
 
 ## Setup and Play reads
 
