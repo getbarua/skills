@@ -215,7 +215,7 @@ Strings are trimmed and can't be empty or hold control characters. Emails are lo
 
 Send one order event per status, from the server code that records it. `order_id` is the `order_id` of the order's `purchased`. A shipment is one parcel, so an order sent in two parcels sends two `order_shipped`, each with its own `shipment_id`. `order_delivered` and `order_delayed` repeat the shipment's facts, so each one says which parcel it is about. Send the carrier, tracking number, tracking link and delivery date as your shipping system has them. Barua's shipment emails show them as you send them, and the tracking link becomes the email's button, so send the link the customer follows. A delay with a new date gets its own `event_id`, so each new date is a new event. A shipment gets one delay without a date.
 
-`order_refunded.amount` is what this refund paid back, in major units. A refund is its own event, so its amount is above 0. Barua quarantines a refund of 0 as `invalid_property`. A refund that moved no money, such as one that only puts items back in stock, sends nothing. Send `full: true` when nothing paid is left on the order, including when this refund is the last of several. Send `false` for a partial refund. Barua stores each refund. A full refund also ends the order's paid support, the way a purchases-feed refund does: the order stops counting as paid and stays in the buyer's history. A partial refund changes nothing else. Neither does a full refund whose `occurred_at` isn't later than the order's last update, such as one stamped the same second as its `purchased`. A full refund for an order Barua hasn't seen records that order as refunded. It counts in the buyer's history and doesn't count as paid. Once the owner approves the refund email, each refund also gets one email, which says the amount and whether the order was refunded in full, read from `full`.
+`order_refunded.amount` is what this refund paid back, in major units. A refund is its own event, so its amount is above 0. Barua quarantines a refund of 0 as `invalid_property`. A refund that moved no money, such as one that only puts items back in stock, sends nothing. Send `full: true` when nothing paid is left on the order, including when this refund is the last of several. Send `false` for a partial refund. Barua stores each refund. A full refund also ends the order's paid support, the way a purchases-feed refund does: the order stops counting as paid and stays in the buyer's history. A partial refund changes nothing else. Neither does a full refund whose `occurred_at` isn't later than the order's last update, such as one stamped the same second as its `purchased`. A full refund for an order Barua hasn't seen records that order as refunded. It counts in the buyer's history and doesn't count as paid. Once the refund email is approved, each refund also gets one email, which says the amount and whether the order was refunded in full, read from `full`.
 
 A model words Barua's receipt and order update emails once per workspace and language, from the brand pack and playbook, and never sees an order; Barua's code fills in every order detail from the event's own properties: `order_name` (else `order_id`), `amount` with `currency`, each line's `name` and `quantity` with its unit `price`, `receipt_url`, `tracking_url`, `carrier`, `tracking_number`, `eta_date`, `full` and `reason`. A shipment's lines show no price, because a shipment event carries no currency. The email's only link is its button: the `receipt_url` or `tracking_url` the event carried, else the website from the brand pack. Barua refuses any other link, so a receipt hosted by a payment provider works when it arrives as `receipt_url`. None of these emails sends until the workspace owner or an agent authorized under their policy approves it. After that it goes out without the `marketing_opt_in` check, usually within a few hours of the event. One that can't go out within a day of the event's `occurred_at` is dropped, so send these events as they happen.
 
@@ -389,8 +389,9 @@ campaign. Each occurrence and recipient needs a stable, distinct `event_id`.
 
 First approve the custom event in the tracking plan, then use the management
 action `service-event.configure` with `{eventName, purpose, enabled, expectedVersion}`.
-`expectedVersion` is 0 for a new policy. This requires `play:write` and the
-connection's Play review checkpoint. Read current versions with `manage.mjs
+`expectedVersion` is 0 for a new policy. This requires `play:write`. It waits
+for the owner's approval only when the connection's review list holds `play`
+([checkpoints](management.md#http-contract)). Read current versions with `manage.mjs
 service-events` or `GET /api/management/v1/service-events`; follow `next` with
 `after`. A plan approval alone does not authorize email.
 
@@ -647,10 +648,10 @@ fallback. The current steps, in the order they're listed:
 | --- | --- |
 | `create_keys` | The workspace has no active test key, or no active live key. |
 | `verify_domain` | The sending domain isn't verified, or the From address doesn't align with it. |
-| `approve_tracking_plan` | A plan proposal waits for the owner. |
+| `approve_tracking_plan` | A plan proposal waits for approval. |
 | `forward_email` | Optional, and listed under `optional`. Nobody has forwarded one of your emails yet. Barua reuses its design; without one, Barua uses its own. |
 | `confirm_brand` | The owner hasn't confirmed a brand yet. Once confirmed it stays done, and a later proposal changes nothing. |
-| `approve_templates` | The brand is confirmed and some play's email waits for the owner's review, or Barua couldn't write a play's emails and nothing is retrying them: the owner sees why under Plays, and an edit to the brand or playbook tries again. While Barua is still writing them, this stays out of `needs_human`. |
+| `approve_templates` | The brand is confirmed and some play's email waits for review, or Barua couldn't write a play's emails and nothing is retrying them: the owner sees why under Plays, and an edit to the brand or playbook tries again. While Barua is still writing them, this stays out of `needs_human`. |
 | `enable_play_emails` | Every template is approved, but play emails aren't on. Approving templates doesn't turn them on. The owner can use Setup, or an authorized management connection can request `sending.enable`. Do this before the live deploy, because an event from before play emails are first on never starts a play. |
 | `enable_live_events` | Both keys exist and the test events have passed, but live events aren't switched on for the workspace. An authorized management connection can request `intake.enable` once setup is ready. The owner can grant access and review a request in Settings, Agents. |
 | `deploy_live_key` | Live events are on and the test events have passed, but no live `signed_up` has applied through an active live key. Live means sent in `live` mode and received within 72 hours of its `occurred_at`. A backfill never counts. While play emails are off it isn't listed, so the account that proves the deploy can also start a play. |
@@ -702,13 +703,16 @@ Never make the erase a call inside the deletion request, awaited or under `waitU
 
 Your server tells Barua which iPhone belongs to which person, so Barua can
 send phone notifications to it. The app sends its device token to your own
-backend after sign-in; it never calls Barua.
+backend after sign-in; it never calls Barua. The rest of the app's side is in
+[In the iPhone app](#in-the-iphone-app).
 
 Mint a live key for this with `key.create` and `"capabilities":["devices:write"]`
 ([management reference](management.md#phone-notifications)); it needs a
 connection with `setup:write`. An existing key never gains the right and gets
 403 `capability_required`, and a test key gets 403 `test_key_not_allowed`.
-The app's Apple key must be uploaded first. Notifications don't need to be on.
+A workspace holds two live keys at a time, so read step 5 of that reference
+before minting. The app's Apple key must be uploaded first. Notifications
+don't need to be on.
 
 `PUT /api/integrations/v1/devices` with a JSON body of at most 4 KiB:
 
@@ -821,6 +825,45 @@ what Apple already accepted. Erasing a person
 removes the stored text and the link to them, and keeps the status so a
 resent event can't queue again. Stored text has no retention
 window yet.
+
+### In the iPhone app
+
+Registering the token is in [Phone devices](#phone-devices), including the
+`environment` each build type registers. Before you ship the app, also check
+these:
+
+- Turning on Push Notifications for the App ID at Apple invalidates the
+  app's existing provisioning profiles at once. Regenerate them in the same
+  sitting. With manual or CI signing, the next release build can't be
+  signed until you do; Xcode's automatic signing regenerates them itself.
+- `data` arrives as top-level keys beside `aps`, with no `data` wrapper.
+  Barua sets no `category` and no `mutable-content`. The event above
+  reaches the app as:
+
+  ```json
+  {"aps":{"alert":{"title":"Your notes are ready","body":"Open the app to read them."},"sound":"default"},"screen":"notes","meeting":"4812"}
+  ```
+
+  so the tap handler reads `userInfo["screen"]`, and every value is a string.
+- Handle the tap with the completion-handler form of
+  `UNUserNotificationCenterDelegate`,
+  `userNotificationCenter(_:didReceive:withCompletionHandler:)`, and call
+  Apple's completion handler on the main thread. The `nonisolated async`
+  form runs off the main thread. On iOS 27.2, on an iPhone and in a
+  simulator, a tap that brought the app back from the background or started
+  it made UIKit assert the main thread, and the app aborted with "Call must
+  be made on main thread" (SIGABRT under
+  `-[UIApplication _performBlockAfterCATransactionCommitSynchronizes:]`).
+  A tap while the app was open didn't crash, so this is easy to miss. Once
+  the app sets this delegate, taps on its own local notifications take the
+  same path.
+- Test taps with a real delivery, because calling your own handler skips
+  the path that crashes. On a simulator, save the payload above as
+  `payload.json` and run `xcrun simctl push <device> <bundle id> payload.json`.
+  Tap the banner with the app open (a banner shows then only when the
+  app's `willPresent` returns `.banner`), then again from the background
+  and after closing the app. Check that each tap lands on the screen `data`
+  names; an app that stays up can still open the wrong one.
 
 ## Finish an event-only run
 

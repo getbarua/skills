@@ -34,9 +34,10 @@ These are alternatives, not a sequence.
 | Optional pixel or historical import | [Optional setup](references/optional-setup.md). Only when relevant; do not replace installed keys or replay history as live activity. |
 | Activity-based suggestions | [Discovery opportunities](references/management.md#discovery-opportunities). |
 | Delivery or domain troubleshooting | [Deliverability](references/management.md#deliverability) and the requested [inspection](references/inspection.md). |
-| Send the product's Supabase Auth codes | [Workspace sign-in emails](references/management.md#workspace-sign-in-emails). Codes only; the owner approves enabling, and the Supabase hook goes off before disabling. |
-| Prepare phone notifications for an iPhone app | [Phone notifications](references/management.md#phone-notifications). The helper reads the Apple key file itself; the owner approves turning on and, separately, marketing. |
-| Register people's iPhones from the backend | [Phone devices](references/events.md#phone-devices). Mint a new live key with `devices:write`; the app sends its token to the backend, never to Barua. |
+| Send the product's Supabase Auth codes | [Workspace sign-in emails](references/management.md#workspace-sign-in-emails). Codes only; enabling waits for the owner when the connection reviews `launch`, and the Supabase hook goes off before disabling. |
+| Prepare phone notifications for an iPhone app | [Phone notifications](references/management.md#phone-notifications). The helper reads the Apple key file itself; turning on and, separately, marketing wait for the owner when the connection reviews `launch`. |
+| Register people's iPhones from the backend | [Phone devices](references/events.md#phone-devices). Mint a new live key with `devices:write`, after checking for a free live key slot; the app sends its token to the backend, never to Barua. |
+| Build the iPhone app's side | [In the iPhone app](references/events.md#in-the-iphone-app). Read before writing the notification tap handler or turning on Push Notifications at Apple. |
 
 ## Work and handoff
 

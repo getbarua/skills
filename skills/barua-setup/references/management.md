@@ -192,8 +192,11 @@ metadata. If the key has been revoked or recovery is no longer permitted, a key
 command reports `secret_unavailable` instead of claiming the secret was saved.
 
 Each event-key mode has two active slots. Rotate by creating the replacement,
-installing it and proving fresh traffic before revoking the old key. Never
-revoke a working key just to make space without an approved rotation path.
+installing it and proving fresh traffic before revoking the old key.
+When both slots are taken, no replacement can be minted first. Free one by
+revoking a key you have confirmed is installed nowhere. Revoke a working key
+only when the owner agrees, because its traffic stops until the new key is
+installed.
 Keep secrets out of prompts, logs and commits as well as command arguments.
 
 A workspace allows 20 unrevoked, unexpired management connections. Expired
@@ -421,8 +424,8 @@ and 30-minute usage, target, campaign limits, growth status/reason, and the next
 eligible time. Usage includes reservations. With active marketing Plays, 25%
 of daily and burst capacity is reserved for them. `nextEligibleAt` is the next
 eligibility check, not a promised send time; approved sending hours still apply.
-Configure and resume need `launch:write` and the connection's `launch` review
-checkpoint. `deliverability.pause` uses the same domain/version with no other
+Configure and resume need `launch:write`, and they wait for the owner's
+approval when the connection's review list holds `launch`. `deliverability.pause` uses the same domain/version with no other
 fields and needs `launch:write`; it remains available when terms are stale.
 `deliverability.check` needs `setup:write` and queues a fresh check using that
 same target. It does not wait for DNS or change sending permissions.
@@ -511,10 +514,13 @@ app verifies with `verifyOtp`. Supabase actions `magiclink`, `signup`,
 1. Read `auth-email` and note `generation` (`0` before the first enable) and
    `senderReady`.
 2. Request `{"action":"auth-email.enable","input":{"expectedGeneration":"<generation>"}}`
-   with a new idempotency key and `--secret-file`. The owner approves the
-   launch checkpoint. `wait --id` with the same secret destination saves the
-   `v1,whsec_...` hook secret; the result carries `hookUrl` and the new
-   `generation`. Only this connection can recover the secret, and only while
+   with a new idempotency key and `--secret-file`. When the connection's
+   review list lacks `launch`, it runs at once: `action` saves the
+   `v1,whsec_...` hook secret to that destination and its result carries
+   `hookUrl` and the new `generation`. When the list holds `launch`, it waits
+   for the owner's approval; then `wait --id` with the same secret destination
+   saves the secret, and its result carries both. Never run `wait` with a file
+   `action` already wrote: the helper never overwrites one. Only this connection can recover the secret, and only while
    that generation is enabled.
 3. In the Supabase project, set the Send Email hook URL and secret together
    and raise the project's email rate limit (Supabase applies it before the
@@ -530,8 +536,8 @@ bounces on codes in 24 hours turn sign-in email off; `auth-email` shows
 ## Phone notifications
 
 Barua sends phone notifications to a workspace's iPhone apps through Apple,
-with the app's own Apple key. Setup stores that key and records the owner's
-approvals, and the workspace's backend registers people's phones.
+with the app's own Apple key. Setup stores that key and turns the channel
+on, and the workspace's backend registers people's phones.
 
 1. Read `notifications`. Note `generation` for the switch and
    `appsRevision` for app changes (`0` until the first upload).
@@ -548,7 +554,8 @@ approvals, and the workspace's backend registers people's phones.
    Uploading a key again returns the app to `active`; Barua also tries the
    current key once an hour and resumes on its own if Apple accepts it.
 3. Request `{"action":"notifications.enable","input":{"expectedGeneration":"<generation>"}}`.
-   The owner approves the launch checkpoint. Every enable raises `generation`,
+   It waits for the owner's approval when the connection's review list holds
+   `launch`; otherwise it takes effect when sent. Every enable raises `generation`,
    even when notifications were already on.
 4. Only for marketing notifications: request
    `{"action":"notifications.marketing","input":{"enabled":true,"statement":"<owner's words>","expectedVersion":"<version>"}}`
@@ -559,7 +566,22 @@ approvals, and the workspace's backend registers people's phones.
 5. For the backend that registers devices, mint a new live key with
    `{"action":"key.create","input":{"mode":"live","label":"Device registration","capabilities":["devices:write"]}}`
    and a `--secret-file` or `--secret-command-file`. It needs `setup:write`.
-   An existing key never gains `devices:write`. The backend then calls
+   An existing key never gains `devices:write`. A workspace holds two
+   unrevoked live keys; test keys have their own two and the pixel key does
+   not count. With both live slots taken, `key.create` answers 409
+   `key_slots_full`, and `key.revoke` cannot be undone. Read `GET /keys`
+   first: it lists each active key's `label` and `capabilities`, where
+   `null` marks an older key that keeps its original rights, which never
+   include `service:write` or `devices:write`.
+   When both slots are taken, no replacement can be minted first. Free one by
+   revoking a key you have confirmed is installed nowhere. Revoke a working
+   key only when the owner agrees, because its traffic stops until the new key
+   is installed.
+   A backend that sends events and registers devices can use one new key
+   minted with every right it needs, such as
+   `["events:write","service:write","devices:write"]` (`service:write` also
+   needs `play:write`), which keeps the other slot free for a
+   [rotation](#helper). The backend then calls
    [`PUT` and `DELETE /devices`](events.md#phone-devices); registering does
    not need notifications to be on. Each app in `notifications` shows its
    live `devices` count.
@@ -584,7 +606,9 @@ policy (`service-event.configure`, as for service email) and the backend's
 event key needs `events:write` and `service:write`; a key minted for service
 email already has both. Barua then hands each notification to Apple and
 reports its status. The full contract is in
-[the events reference](events.md#phone-notifications).
+[the events reference](events.md#phone-notifications), and the app's own
+steps, including Apple's provisioning profiles, are in
+[In the iPhone app](events.md#in-the-iphone-app).
 
 ## Setup and Play reads
 
