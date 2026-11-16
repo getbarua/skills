@@ -776,7 +776,8 @@ refused. `service_notification` is for a message the person expects.
 | `expires_in_seconds` | Optional. 0 to 2,419,200 (28 days), default 86,400, counted from when Barua accepted the event. |
 
 Barua builds the notification as Apple receives it (an alert with the
-default sound, `data` beside Apple's `aps`) and refuses one over 4,096 bytes.
+default sound, marked `"mutable-content": 1`, `data` beside Apple's `aps`) and
+refuses one over 4,096 bytes.
 A bad field, or both blocks on one event, quarantines that event alone with
 `invalid_property`. The block is part of the event, so the same `event_id`
 resent with the other block is `event_id_conflict`.
@@ -837,11 +838,15 @@ these:
   sitting. With manual or CI signing, the next release build can't be
   signed until you do; Xcode's automatic signing regenerates them itself.
 - `data` arrives as top-level keys beside `aps`, with no `data` wrapper.
-  Barua sets no `category` and no `mutable-content`. The event above
-  reaches the app as:
+  Barua sets no `category`. It sets `"mutable-content": 1` on every
+  notification, so an app with a notification service extension can change
+  the title and text on the phone before they show, for example to add a
+  name only the phone knows. An app without one shows exactly what you sent.
+  If your extension runs, it must hand back the content within about 30
+  seconds, or iOS shows what you sent. The event above reaches the app as:
 
   ```json
-  {"aps":{"alert":{"title":"Your notes are ready","body":"Open the app to read them."},"sound":"default"},"screen":"notes","meeting":"4812"}
+  {"aps":{"alert":{"title":"Your notes are ready","body":"Open the app to read them."},"sound":"default","mutable-content":1},"screen":"notes","meeting":"4812"}
   ```
 
   so the tap handler reads `userInfo["screen"]`, and every value is a string.
