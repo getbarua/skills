@@ -480,6 +480,13 @@ these Outlook rules must match the media declarations exactly. Add only
 `<meta name="color-scheme" content="light dark">` and
 `<meta name="supported-color-schemes" content="light dark">` for theme metadata.
 
+To label AI-generated content, put this exact marker inside `<head>`.
+Barua preserves it in the email it sends.
+
+```html
+<meta name="digital-source-type" content="http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia">
+```
+
 A logo pair requires adjacent sibling images, light first, with identical
 `alt`, `width` and `height`. Both obey the existing source/dimension checks.
 Use `class="service-logo-light"` with the exact inline style
