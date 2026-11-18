@@ -72,8 +72,10 @@ without storing a session. They cannot refresh, log out, or change passwords.
 --limit <n>                 closure artifacts per page, 1..100
 --timeout-ms <n>             total command deadline, 1..300000; default 60000
 
-signup and workspace-create require accepted_terms: true, the exact
-accepted_version and accepted_digest from terms, and a pixel-key destination.
+signup requires accepted_terms: true and the exact accepted_version and
+accepted_digest from terms. workspace-create takes the same fields or
+reuse_terms_from_workspace_id for an active workspace you own under the same
+account holder. Both require a pixel-key destination.
 terms-accept takes {version,digest}; invitation-accept takes
 {token,accepted_terms:true,accepted_version,accepted_digest}.
 Acceptance is never filled in for you.
@@ -235,7 +237,7 @@ const commands = {
   'closure-artifacts': { route: w => `/api/workspaces/${w}/closure/artifacts`, flags: ['after', 'limit'] },
   'closure-download': { route: (w, id) => `/api/workspaces/${w}/closure/artifacts/${id}`, id: true, flags: ['revision'], localFlags: ['output-file'] },
   workspaces: { route: '/api/workspaces', identity: true, flags: ['after'] },
-  'workspace-create': { route: '/api/workspaces', identity: true, method: 'POST', body: true, key: 'apiKey', terms: true },
+  'workspace-create': { route: '/api/workspaces', identity: true, method: 'POST', body: true, key: 'apiKey' },
   me: { route: '/api/me' },
   'terms-accept': { route: '/api/terms/accept', method: 'POST', body: true },
   'pixel-key-rotate': { route: '/api/tenant/key', method: 'POST', key: 'apiKey' },
@@ -298,7 +300,12 @@ async function main() {
   if (command === 'closure-download' && !/^[1-9][0-9]{0,18}$/.test(args.revision ?? '')) fail('invalid_flag', 'Provide the exact archive revision from its manifest.');
   if (args.status && !['pending', 'approved', 'rejected', 'sent'].includes(args.status)) fail('invalid_flag', 'Use pending, approved, rejected or sent.');
   const body = spec?.body || bodyAuth.has(command) ? await input(args['input-file'], deadline) : undefined;
-  if (spec?.terms || command === 'signup') {
+  if (command === 'workspace-create' && Object.hasOwn(body, 'reuse_terms_from_workspace_id')) {
+    uuid(body.reuse_terms_from_workspace_id, 'source workspace');
+    if (['accepted_terms', 'accepted_version', 'accepted_digest'].some(field => Object.hasOwn(body, field))) {
+      fail('invalid_input', 'Provide a source workspace or a new acceptance.');
+    }
+  } else if (spec?.terms || command === 'signup' || command === 'workspace-create') {
     requiredTerms(body, ['accepted_version', 'accepted_digest']);
     if (body.accepted_terms !== true) fail('terms_required', 'Provide accepted_terms: true only after reviewing the exact legal documents.');
   }

@@ -43,8 +43,29 @@ automatically because setup needs one.
 helper saves the key before saving its signed-in session.
 
 `workspaces` lists memberships; use `--after` with its `next_cursor` to keep
-reading. `workspace-create` takes the workspace fields and exact acceptance,
-plus a key destination. `workspace-select --workspace <uuid>` verifies current
+reading. `workspace-create` takes `site_url`, optional `from_name` and a key
+destination. To reuse current terms for the same company or person that holds
+the account, use the ID of an active workspace you own:
+
+```sh
+node "$BARUA_SKILL/scripts/owner.mjs" workspace-create --secret-file "$PRIVATE_PIXEL_KEY_FILE" <<'JSON'
+{"site_url":"https://shop.example","reuse_terms_from_workspace_id":"00000000-0000-4000-8000-000000000001"}
+JSON
+```
+
+Set `PRIVATE_PIXEL_KEY_FILE` to a new path in a private directory. The helper
+uses the signed-in account. Direct callers send the same JSON to
+`POST /api/workspaces` with the owner's bearer token. Success returns 201 with
+the new `tenantId`, site origin and pixel key. The helper stores the key privately
+and omits it from its printed result.
+
+Use the exact source workspace ID from `workspaces`. A 403 `forbidden` means
+the account does not own an active source. A 403 `terms_stale` means it lacks a
+qualifying receipt there. For new acceptance, omit the source ID and supply
+the same explicit acceptance fields as signup after the owner has reviewed
+the current documents. Supply one form of evidence per request.
+
+`workspace-select --workspace <uuid>` verifies current
 membership before storing that selection. Scoped commands cannot silently
 fall back to another workspace. `me` reads its role and terms state.
 Use `terms.stale` to decide whether acceptance is needed. Routine releases
