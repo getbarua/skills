@@ -61,6 +61,11 @@ the evidence came from a local fixture or a live check.
 | `campaign` | `manage.mjs` | `GET /campaigns/:id` | Connection; one of segment:write, campaign:write, campaign:send |
 | `campaign-recipients` | `manage.mjs` | `GET /campaigns/:id/recipients` | people:read; one of segment:write, campaign:write, campaign:send |
 | `campaign-job` | `manage.mjs` | `GET /campaign-jobs/:id` | Connection; one of segment:write, campaign:write, campaign:send |
+| `authoring-inbox` | `manage.mjs` | `GET /authoring/inbox` | One of play:write, campaign:write |
+| `authoring-request` | `manage.mjs` | `GET /authoring/requests/:id` | play:write |
+| `play-draft` | `manage.mjs` | `GET /plays/drafts/:playId` | play:write |
+| `play-draft-preflight` | `manage.mjs` | `POST /plays/drafts/preflight` | play:write |
+| `campaign-authoring-task` | `manage.mjs` | `GET /campaign-authoring-tasks/:id` | campaign:write |
 | `play-catalog` | `manage.mjs` | `GET /plays/catalog` | Connection |
 | `play-job` | `manage.mjs` | `GET /plays/jobs/:jobId` | Connection |
 | `play` | `manage.mjs` | `GET /plays/:id/detail` | Connection |

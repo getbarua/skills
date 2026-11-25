@@ -1,6 +1,6 @@
 ---
 name: barua-setup
-description: Sets up and maintains Barua email for a product. Reads repos, writes server-side emitters, manages plans, plays, saved segments and one-off campaigns under an owner's permissions, and verifies fresh delivery. Use for setup, event changes, brand or play updates, campaigns, launch, key rotation, and event errors. Supports full delegation or owner review at selected checkpoints.
+description: Sets up and maintains Barua email for a product. Reads repos, writes server-side emitters, manages plans and segments, drafts Plays and campaigns under owner permissions, and verifies fresh delivery. Use for setup, event changes, writing requests, brand or Play updates, campaigns, launch, key rotation, and event errors.
 license: MIT
 metadata:
   version: "2"
@@ -31,6 +31,7 @@ These are alternatives, not a sequence.
 | Add or fix one event | [Start with one event](references/events.md#start-with-one-event), its linked event contract and server-delivery rules. Complete product emails use [Service email](references/events.md#service-email), with optional safe HTML, HTTPS links, a static logo or dark-mode pair, and required plain text. Preserve the existing plan and pending work. |
 | Prepare a segment or campaign | [Campaign procedure](references/management.md#send-one-campaign-to-a-saved-segment). Preparation and sending have separate permissions. |
 | Add or change a Play | [Exact Play procedure](references/management.md#propose-and-operate-a-play). Reconcile the saved revision, policy and previews before approval, even with full delegation. |
+| Write or revise email copy, or pick up an awaiting-agent request | [Write emails](references/writing.md). Use the scoped inbox, exact draft inputs and separate owner review. |
 | Full setup or launch | [Complete setup](references/management.md#complete-setup-and-later-changes) and [full handoff](references/management.md#finish-and-hand-off). Read each operation's contract before using it. |
 | Broader lifecycle strategy, if chosen | [Journey review](references/journey-review.md). Maintain its local HTML/JSON and exact input evidence. |
 | Optional pixel or historical import | [Optional setup](references/optional-setup.md). Only when relevant; do not replace installed keys or replay history as live activity. |

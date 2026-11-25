@@ -228,6 +228,11 @@ most 100 records. An exact creation retry reuses its existing connection.
 | `notification-app-delete` | JSON `{bundleId,environment,expectedRevision}` with `appsRevision` from `notifications`; requires `setup:write`; removes that app and its key |
 | `segment --id <segment-id>`, `campaign --id <campaign-id>` | Current detail, versions and prepared previews |
 | `campaign-job --id <job-id>` | One background job's status, error and progress counts |
+| `authoring-inbox` | Waiting writing work under the current grant. Use `--area plays` or `--area campaigns` to scope it and `--after` for another page. |
+| `authoring-request` | Read the saved writing request with `--id`; requires `play:write`. |
+| `play-draft` | Read a Play's editable copy and exact source using `--play-id`; add `--revision-id` and `--language` together for a pinned language request. |
+| `play-draft-preflight` | Check the Play draft `{action,input}` from a private JSON file or stdin. It saves nothing and exits 3 for validation issues. |
+| `campaign-authoring-task` | Read the brief and language requirements using the preparation job's `--id`; requires `campaign:write`. |
 | `campaign-recipients --id <campaign-id>` | Current prepared audience results; requires `people:read`; use `--after` for another page |
 | `action` | `{action,input}` JSON from stdin or `--input-file`; requires `--idempotency-key` |
 | `status`, `resume`, `cancel` | Management credentials and `--id` operation UUID |
@@ -249,19 +254,21 @@ request or operation; the timeout does not undo an external secret-store write.
 `--poll-ms` is 100–10000, default 1000. Ordinary output is one redacted JSON
 object. Exit codes are independent of `verify.mjs`: 0 succeeded/satisfied,
 1 helper or transport error, 2 authorization refused, 3 terminal unsuccessful,
-4 awaiting approval, 5 still pending at timeout. For `proof`, only delivered exits
+4 awaiting approval, 5 awaiting your copy or still pending at timeout. For `proof`, only delivered exits
 0. Provider failure exits 3; unconfirmed delivery exits 5. A timeout is not cancellation.
 Keep the operation UUID and read or resume it later.
-List commands `operations`, `segments`, `campaigns` and `campaign-recipients`
+List commands `operations`, `segments`, `campaigns`, `campaign-recipients` and `authoring-inbox`
 accept `--after <cursor>`. Pass the exact returned `next` until it is null;
 the helper reads one page per call. A campaign job is read by its returned UUID,
 not by a page cursor. These reads never consume stdin or submit an action.
 
 For `play.propose`, `play.request-changes` and `play.retry`, `wait` follows the
 saved preparation job after the operation succeeds. It exits 0 only when the
-job returns a ready revision. `action` acknowledges the operation; it does not
-wait for authored structure or email copy. Preparation states are `accepted`,
-`preparing`, `ready` and `failed`. A timeout retains the same job for later reads.
+job returns a ready revision. `action` acknowledges the operation. The job can
+report `accepted`, `preparing`, `awaiting_agent`, `ready` or `failed`. When it
+reports `awaiting_agent`, `wait` returns immediately with exit 5. Follow the
+[writing procedure](writing.md#find-the-work) to finish the same request.
+A timeout retains the same job for later reads.
 
 ## HTTP contract
 
@@ -278,6 +285,7 @@ checkpoint means the permission alone authorizes it.
 | `campaign.create` | `campaign:write` | |
 | `campaign.update` | `campaign:write` | |
 | `campaign.prepare` | `campaign:write` | |
+| `campaign.draft.variant` | `campaign:write` | |
 | `campaign.send` | `campaign:send` | `campaign` |
 | `campaign.pause` | `campaign:send` | |
 | `campaign.resume` | `campaign:send` | `campaign` |
@@ -315,6 +323,11 @@ checkpoint means the permission alone authorizes it.
 | `discovery.snooze` | `play:write` | |
 | `discovery.replace` | `play:write` | |
 | `play.propose` | `play:write` | |
+| `authoring.complete-catalog` | `play:write` | |
+| `play.draft.save` | `play:write` | |
+| `play.draft.patch` | `play:write` | |
+| `play.draft.submit` | `play:write` | |
+| `play.draft.localize` | `play:write` | |
 | `play.approve` | `play:write` | `play` |
 | `play.discard-proposal` | `play:write` | |
 | `play.retire` | `play:write` | `play` |
@@ -357,6 +370,11 @@ a recoverable secret for that connection's own key; consume it through the helpe
 | `GET /emails/:id/preview` | Inert text HTML; cannot load tracking resources or follow links. Same two permissions. |
 | `GET /emails/:id/raw` | Explicit raw HTML attachment. Save privately; do not open it as an active page or paste it into chat. Same two permissions. |
 | `GET /campaign-jobs/:id` | One preparation, segment preview or send job's status and progress |
+| `GET /authoring/inbox` | Bounded page of work under the current grant. Takes `after` and optional `area`; returns `enabled`, `items` and `next`. |
+| `GET /authoring/requests/:id` | Exact saved Play writing request and scope; requires `play:write`. |
+| `GET /campaign-authoring-tasks/:id` | Exact campaign revision, brief, remaining languages and writing context; requires `campaign:write`. |
+| `GET /plays/drafts/:playId` | Current editable Play and authoring source. Paired `revisionId` and `language` select the pinned locale request. Requires `play:write`. |
+| `POST /plays/drafts/preflight` | Validate a Play draft `{action,input}` and return `valid`, `languages` and `issues`. Requires `play:write`. |
 | `GET /setup`, `/plan`, `/events/status`, `/brand`, `/keys`, `/domain` | Current setup and configuration; domain read does not verify DNS or flush sending |
 | `GET /deliverability` | Cached domain checks and accepted-message feedback; read with `inspect.mjs deliverability`. Also available with stale terms so an agent can discover the exact target for a marketing stop. |
 | `GET /templates/inbound`, `/templates/inbound/:id` | Forwarding address and existing email layouts; requires `setup:write` |
@@ -769,13 +787,18 @@ change an approved Play from these results.
 
 ## Propose and operate a Play
 
+If the [writing inbox](writing.md#find-the-work) returns `enabled: true`,
+use the exact [Play draft procedure](writing.md#prepare-or-revise-a-play).
+You can still submit `play.propose` or `play.request-changes` to record a
+brief. Finish that saved request through `play.draft.submit` with its `jobId`.
+
 Read `play-catalog` for `expectedToken` and `branchingEnabled`. With confirmed
 brand context and Play review enabled, send `play.propose` with that token and
 a plain-language `intent`. Branching disabled produces a sequential Play;
 branching enabled produces a graph. Optional
 `audience`, `goal`, `trigger` and `requirements` make the intended behavior
-precise. Barua writes the structure and every email. Raw graphs and email
-templates are not accepted as proposal input. The complete intent content
+precise. When the writing inbox is disabled, Barua writes the structure and
+every email. Proposal input is the brief in either mode. The complete intent content
 must fit within 24,000 UTF-8 bytes.
 
 If using the optional journey artifact, use the exact request in its `play_requests`.
@@ -788,7 +811,8 @@ wait for its revision, then refresh the catalog before the next proposal.
 `play.request-changes` with its current token and feedback. Creating another
 Play does not replace or stop the previously approved one.
 
-Use the returned operation ID with `wait`, then read its ready revision.
+Use the returned operation ID with `wait`. Follow the saved job if it is
+`awaiting_agent`, then read its ready revision.
 `play-definition` returns the complete definition, exact content hash and
 readiness blockers. `play-validate` validates that saved revision. Simulation
 accepts `{revisionId,input}` over HTTP; the helper wraps its input file using
@@ -965,17 +989,16 @@ absent are not zero; read campaign detail for current results.
    supported details, `cta_url` supplies its destination, `required_fields`
    names fields every recipient must have, and `optional_fields` maps fields
    to explicit fallbacks. Use the saved brand, voice and email design.
-   Barua drafts and designs the email; do not handwrite HTML or change workspace
-   brand settings to make a one-off email.
+   Barua applies that design to the copy for this campaign.
    `campaign.update` takes those same fields plus `campaignId` and numeric
    `expectedVersion`; changes require fresh preparation.
 4. Submit `campaign.prepare` with `{campaignId,expectedVersion}`. Keep its
-   returned job ID. Read `campaign-job` until it succeeds or reports a problem,
-   then read `campaign`. Do not equate a successful management operation with
-   a finished job. Inspect the fixed audience, exclusion reasons, each language's
-   subject and rendered preview, and any readiness blocker. Barua writes each
-   language variant and uses checked merge fields; it does not generate a new
-   email separately for each recipient.
+   returned job ID and read `campaign-job`. When it reports `awaitingAgent`,
+   read `campaign-authoring-task` and follow [Write a campaign](writing.md#write-a-campaign).
+   Barua handles legacy authoring when the writing inbox is disabled. Once the
+   job finishes, read `campaign` and inspect the fixed audience, exclusions,
+   language previews and readiness. A successful management operation confirms
+   the request was saved. The background job confirms preparation is complete.
    A ready snapshot can have `snapshot.eligible: 0` and no language previews.
    Report its counts and exclusion reasons; do not request sending or resuming.
    An otherwise valid send or resume request returns 409
@@ -1032,6 +1055,7 @@ Read current campaign detail before choosing an action:
 |---|---|
 | `campaign.update` | Sending has not started; not completed, cancelled or expired. Creates a new revision that needs preparation. |
 | `campaign.prepare` | Draft, failed, preparing or ready. Ready returns the existing preparation. |
+| `campaign.draft.variant` | Current writing task, exact revision and a remaining language. An edit needs a fresh campaign revision. |
 | `campaign.send` | Ready or paused; sending has not started. Requires the exact current prepared revision with at least one eligible recipient. |
 | `campaign.resume` | Paused, with the exact current revision already approved and at least one eligible recipient in its prepared audience. |
 | `campaign.pause` | Scheduled, sending or paused. Completed, cancelled and expired campaigns remain unchanged. |
@@ -1149,8 +1173,9 @@ review flow under the current grant.
    context in a `per_play` playbook alone does not establish rule coverage.
    Use the matching reviewed `play.propose` request for a missing supported
    marketing Play; use
-   `play.request-changes` for an existing Play. Wait for the exact prepared
-   revision. Read each play's current
+   `play.request-changes` for an existing Play. If the request awaits your
+   copy, complete its [Play draft](writing.md#prepare-or-revise-a-play) first.
+   Read each play's exact prepared
    revision and token. Reconcile its rules and renders with the requested
    behavior before approving selected languages; retain exact revision IDs,
    content hashes and proposed/approved roles, current review tokens and

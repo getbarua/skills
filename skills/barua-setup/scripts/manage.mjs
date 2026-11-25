@@ -20,6 +20,7 @@ const reviewSummaries = new WeakSet();
 const discoveryRecords = new WeakSet();
 // Actions whose successful result carries a secret for this connection only.
 const SECRET_ACTIONS = ['key.create', 'pixel.key.create', 'auth-email.enable'];
+const PLAY_DRAFT_ACTIONS = ['play.draft.save', 'play.draft.patch', 'play.draft.submit', 'play.draft.localize'];
 const HELP = `Usage: node scripts/manage.mjs <command> [options]
 
 Commands: connect, recover-key, connections, capabilities, setup, usage, operations, status,
@@ -27,6 +28,7 @@ Commands: connect, recover-key, connections, capabilities, setup, usage, operati
           campaign, campaign-recipients, campaign-job, segment-fields, service-events, auth-email, notifications,
           notification-app-upload, notification-app-delete, play-catalog, play, play-job,
           play-definition, play-validate, play-simulate, play-runs, play-trace, play-admissions,
+          authoring-inbox, authoring-request, play-draft, play-draft-preflight, campaign-authoring-task,
           play-feedback, play-paths, discovery, discovery-opportunity,
           people, people-search, person, person-activity, person-events, pixel, sample, sample-preview
 
@@ -35,7 +37,7 @@ management calls. connect/recover-key/connections/review use BARUA_OWNER_TOKEN a
 BARUA_WORKSPACE_ID instead. Credentials are never accepted as arguments.
 Set BARUA_WORKSPACE_ID for management calls too to bind the selected workspace.
 
---input-file <file>       JSON body for connect/action/review/people-search and the
+--input-file <file>       JSON body for connect/action/review/people-search/play-draft-preflight and the
                           notification-app commands; otherwise stdin
 --key-file <file>         notification-app-upload: the Apple .p8 key file. The helper
                           reads it itself and never prints or returns the key
@@ -49,6 +51,7 @@ Set BARUA_WORKSPACE_ID for management calls too to bind the selected workspace.
 --id <uuid>              operation ID for status/resume/cancel/review/wait/proof
                          connection ID for recover-key; segment/campaign ID for its read;
                          job ID for campaign-job/play-job; run ID for play-trace;
+                         request ID for authoring-request; task ID for campaign-authoring-task;
                          person ID for person/person-activity/person-events;
                          opportunity ID for discovery-opportunity
                          sample ID for sample/sample-preview
@@ -57,10 +60,13 @@ Set BARUA_WORKSPACE_ID for management calls too to bind the selected workspace.
 --limit <n>              people/person-activity/person-events page size, 1..100
 --play-id <slug>         exact Play ID for play and play-* inspection commands
 --revision-id <uuid>     immutable revision for play/definition/validate/simulate/paths
+                         with --language, the pinned source of a play-draft language request
+--language <locale>      exact two-letter language for a play-draft language request
+--area <area>            plays or campaigns for authoring-inbox. Omit to read both permitted areas
 --version <n>            immutable opportunity version for discovery-opportunity
 --after-version <uuid>   nextVersion from play detail, to read older versions
 --after <cursor>         next cursor from operations, segment/campaign lists,
-                         campaign recipients, discovery, service-events or Play history pages
+                         campaign recipients, authoring inbox, discovery, service-events or Play history pages
 --status <status>        play-admissions filter: blocked, admitted, expired, cancelled
 --secret-file <file>     exclusive 0600 destination; inside Git it must be ignored
 --secret-command-file <file>  JSON argv array for an authorized command; the new
@@ -94,7 +100,10 @@ After a failed transfer, repeat recover-key with the same ID and a new file.
 wait resumes ready operations and expired leases. It also recovers completed
 key creation into the requested destination. It never grants approval.
 For Play authoring actions, wait follows the saved job until its exact revision
-is ready or preparation fails. An accepted operation alone is not a ready Play.
+is ready, preparation fails or the job awaits your copy. Read authoring-inbox
+then authoring-request and play-draft for the exact source. play-draft-preflight
+checks a draft action. Submit validated work through action with an idempotency key.
+Read campaign-authoring-task using the prepare job ID before writing its variants.
 play-simulate reads synthetic simulation input from JSON; it sends no email.
 discovery reads status and a page of opportunities. Follow its next cursor with
 --after. discovery-opportunity --id reads one opportunity. These reads contain
@@ -106,8 +115,9 @@ has no run ID. These commands cannot change an allowance.
 proof --bind-stdin accepts JSON {eventId} to bind a real event; --input-file
 also binds. Plain proof --id only reads and never waits for stdin.
 Exit: 0 success, 1 helper/transport error, 2 authorization refused,
-      3 terminal unsuccessful, 4 awaiting approval, 5 still running at timeout
-      or delivery not yet confirmed. A proof exits 0 only when delivered.
+      3 terminal unsuccessful or draft preflight refused, 4 awaiting approval,
+      5 awaiting your copy, still pending at timeout, or delivery not confirmed.
+      A proof exits 0 only when delivered.
 review-package reads current setup and exact example emails without changing
 anything. Optional --input-file supplies version-bound repository evidence.
 Install the whole skill: this command also needs scripts/review-package.mjs.
@@ -282,16 +292,18 @@ async function main() {
     'output-file': { type: 'string' }, 'output-dir': { type: 'string' }, 'proof-id': { type: 'string' }, 'journey-review-file': { type: 'string' },
     'opportunity-id': { type: 'string' }, 'after-version': { type: 'string' },
     'session-id': { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'string' },
-    version: { type: 'string' }, 'key-file': { type: 'string' },
+    version: { type: 'string' }, 'key-file': { type: 'string' }, area: { type: 'string' }, language: { type: 'string' },
   } });
   if (args.help) return { help: true, exit: 0 };
   const command = positionals[0];
   const playCommands = ['play','play-definition','play-validate','play-simulate','play-runs','play-trace','play-admissions','play-feedback','play-paths'];
+  const playDraft = command === 'play-draft', preflight = command === 'play-draft-preflight';
   const commands = ['connect','recover-key','connections','capabilities','setup','usage','operations','status','action','resume','cancel','review','wait','proof',
     'review-package','segments','segment','campaigns','campaign','campaign-recipients','campaign-job','segment-fields','service-events','auth-email',
+    'authoring-inbox','authoring-request','campaign-authoring-task','play-draft','play-draft-preflight',
     'notifications','notification-app-upload','notification-app-delete','sample','sample-preview','pixel','play-catalog','play-job','discovery','discovery-opportunity','people','people-search','person','person-activity','person-events', ...playCommands];
   if (positionals.length !== 1 || !commands.includes(command)) fail('invalid_flag', 'Choose a command from --help.');
-  const hasId = ['sample','sample-preview','recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
+  const hasId = ['sample','sample-preview','recover-key','status','resume','cancel','review','wait','proof','segment','campaign','campaign-recipients','campaign-job','campaign-authoring-task','authoring-request','play-job','play-trace','person','person-activity','person-events','discovery-opportunity'].includes(command);
   if (hasId ? !UUID.test(args.id ?? '') : args.id !== undefined) fail('invalid_flag', 'Provide --id only for a command that takes a UUID.');
   if (args.version !== undefined && (command !== 'discovery-opportunity' || !/^[1-9][0-9]*$/.test(args.version) || !Number.isSafeInteger(Number(args.version)))) {
     fail('invalid_flag', 'Use --version only with discovery-opportunity and its positive version number.');
@@ -306,7 +318,8 @@ async function main() {
   if (args.limit !== undefined && (!peoplePage || !/^(?:[1-9][0-9]?|100)$/.test(args.limit))) {
     fail('invalid_flag', 'Use --limit with a people or activity page, from 1 to 100.');
   }
-  if (playCommands.includes(command) ? !/^[a-z][a-z0-9_]{0,63}$/.test(args['play-id'] ?? '') : args['play-id'] !== undefined) {
+  const playIdFormat = playDraft ? /^[a-z][a-z0-9_]{0,39}$/ : /^[a-z][a-z0-9_]{0,63}$/;
+  if ((playDraft || playCommands.includes(command)) ? !playIdFormat.test(args['play-id'] ?? '') : args['play-id'] !== undefined) {
     fail('invalid_flag', 'Provide --play-id for a Play inspection command.');
   }
   const needsRevision = ['play-definition','play-validate','play-simulate','play-paths'].includes(command);
@@ -314,12 +327,19 @@ async function main() {
     fail('invalid_flag', 'Use --after-version only with play and its returned version UUID.');
   }
   if (needsRevision ? !UUID.test(args['revision-id'] ?? '') : args['revision-id'] !== undefined
-    && (command !== 'play' || !UUID.test(args['revision-id']))) {
+    && (!['play', 'play-draft'].includes(command) || !UUID.test(args['revision-id']))) {
     fail('invalid_flag', 'Provide --revision-id for exact-version inspection.');
   }
+  if (args.language !== undefined ? !playDraft || !args['revision-id'] || !/^[a-z]{2}$/.test(args.language) : playDraft && args['revision-id']) {
+    fail('invalid_flag', 'Use --language and --revision-id together for a pinned Play draft language.');
+  }
+  if (args.area !== undefined && (command !== 'authoring-inbox' || !['plays', 'campaigns'].includes(args.area))) {
+    fail('invalid_flag', 'Use --area with authoring-inbox and choose plays or campaigns.');
+  }
   const playHistory = ['play-runs','play-trace','play-admissions','play-feedback'].includes(command);
-  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients','discovery','service-events'].includes(command))
-    || !args.after || args.after.length > (playHistory ? 256 : 2048) || /[\u0000-\u001f\u007f]/.test(args.after))) {
+  const afterLimit = command === 'authoring-inbox' ? 160 : playHistory ? 256 : 2048;
+  if (args.after !== undefined && ((!playHistory && !['operations','segments','campaigns','campaign-recipients','discovery','service-events','authoring-inbox'].includes(command))
+    || !args.after || args.after.length > afterLimit || /[\u0000-\u001f\u007f]/.test(args.after))) {
     fail('invalid_flag', 'Use --after only with a list or history page and its returned cursor.');
   }
   if (command === 'play-admissions' && args.after !== undefined && !UUID.test(args.after)) {
@@ -337,7 +357,7 @@ async function main() {
     fail('invalid_flag', 'Use --key-file only with notification-app-upload, and always with it.');
   }
   const writes = ['connect','action','review','proof','play-simulate'].includes(command) || notificationApp;
-  const privateRead = command === 'people-search';
+  const privateRead = command === 'people-search' || preflight;
   if (args['bind-stdin'] && (command !== 'proof' || args['input-file'])) fail('invalid_flag', 'Use --bind-stdin only with proof and without --input-file.');
   if (!writes && !privateRead && command !== 'review-package' && args['input-file']) fail('invalid_flag', 'This command does not take a JSON body.');
   if (command === 'review-package' ? !args['output-dir'] : args['output-dir'] || args['proof-id']) fail('invalid_flag', 'Use --output-dir with review-package.');
@@ -379,9 +399,10 @@ async function main() {
       credentials.push(appleKey, appleKey.trim(), lines.join(''), ...lines.filter(line => line.length >= 16));
     }
   }
-  if (command === 'action' && (typeof body.action !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input))) {
+  if ((command === 'action' || preflight) && (typeof body.action !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input))) {
     fail('invalid_action', 'Send {action, input} with an input object.');
   }
+  if (preflight && !PLAY_DRAFT_ACTIONS.includes(body.action)) fail('invalid_action', 'Choose a Play draft save, patch, submit or localize action for preflight.');
   let journey, journeyBytes = 0;
   if (args['opportunity-id'] !== undefined && (command !== 'action' || body.action !== 'play.propose' || !args['journey-review-file']))
     fail('invalid_flag', 'Use --opportunity-id with play.propose and --journey-review-file.');
@@ -493,7 +514,8 @@ async function main() {
       if (next.status === 0 && Date.now() >= deadline) break;
       if (next.status < 200 || next.status >= 300) return await finish(next);
       job = next.body;
-      if (!['accepted','preparing','ready','failed'].includes(job?.state)) fail('unexpected_response', 'Barua returned an unknown preparation state.');
+      if (!['accepted','preparing','awaiting_agent','ready','failed'].includes(job?.state)) fail('unexpected_response', 'Barua returned an unknown preparation state.');
+      if (job.state === 'awaiting_agent') return { ...result, preparation: job, exit: 5 };
       if (job.state === 'ready') {
         if (!UUID.test(job.revisionId ?? '')) fail('unexpected_response', 'Preparation finished without an exact Play version.');
         return { ...result, preparation: job, exit: 0 };
@@ -546,12 +568,26 @@ async function main() {
     if (['capabilities','setup','usage','operations','segments','campaigns','segment-fields','service-events','auth-email','notifications'].includes(command)) {
       return await finish(await request(`${prefix}/${command}${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     }
-    const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs' }[command];
+    if (command === 'authoring-inbox') {
+      const query = new URLSearchParams({ ...(args.area ? { area: args.area } : {}), ...(args.after ? { after: args.after } : {}) });
+      return await finish(await request(`${prefix}/authoring/inbox${query.size ? `?${query}` : ''}`));
+    }
+    const readRoute = { segment: 'segments', campaign: 'campaigns', 'campaign-job': 'campaign-jobs',
+      'campaign-authoring-task': 'campaign-authoring-tasks', 'authoring-request': 'authoring/requests' }[command];
     if (readRoute) return await finish(await request(`${prefix}/${readRoute}/${args.id}`));
     if (command === 'campaign-recipients') return await finish(await request(
       `${prefix}/campaigns/${args.id}/recipients${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`));
     if (command === 'play-catalog') return await finish(await request(`${prefix}/plays/catalog`));
     if (command === 'play-job') return await finish(await request(`${prefix}/plays/jobs/${args.id}`));
+    if (playDraft) {
+      const query = new URLSearchParams(args.language ? { revisionId: args['revision-id'], language: args.language } : {});
+      return await finish(await request(`${prefix}/plays/drafts/${args['play-id']}${query.size ? `?${query}` : ''}`));
+    }
+    if (preflight) {
+      const result = await finish(await request(`${prefix}/plays/drafts/preflight`, 'POST', body));
+      if (!result.exit && typeof result.body?.valid !== 'boolean') fail('unexpected_response', 'Barua did not confirm whether the draft passed preflight.');
+      return !result.exit && !result.body.valid ? { ...result, exit: 3 } : result;
+    }
     if (command === 'discovery' || command === 'discovery-opportunity') {
       const path = command === 'discovery' ? `/discovery${args.after === undefined ? '' : `?after=${encodeURIComponent(args.after)}`}`
         : `/discovery/opportunities/${args.id}${args.version === undefined ? '' : `?version=${args.version}`}`;
