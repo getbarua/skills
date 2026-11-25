@@ -17,6 +17,14 @@ for consent and transactional email.
 
 ## Access and discovery
 
+### Browser sign-in and tool access
+
+If Barua tools appear in your MCP client, use the connection directly. Start by reading its capabilities and setup status. Confirm the exact workspace and the owner's actual permissions. Reconnecting an active grant preserves pending operations. Only use the key-based helpers below if the owner chose that access path. An MCP connection has no management key to retrieve.
+
+Use the tools' declared input schemas. Use the same logical request and idempotency key when retrying a write. Keep its operation ID and follow its returned status. Send the owner the exact Barua review link when a checkpoint is pending, then resume that operation after approval. A private handoff can require a key upload or a download. Give the owner its Barua link, then check completion. Never ask them to put a key in chat. Use the [connection guide](https://barua.ai/docs/guides/authentication.md#connect-a-client) to set up a supported client.
+
+### Management keys
+
 `BARUA_MANAGEMENT_KEY` is a workspace-specific `mk_` secret. It authorizes
 `https://barua.ai/api/management/v1`; an `ik_` event key cannot call that API.
 The owner creates the connection through initial browser onboarding, Settings →

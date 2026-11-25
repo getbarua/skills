@@ -14,6 +14,8 @@ Read this router, then only the linked task sections you need. Read a named sect
 
 ## Choose your access path
 
+- With a connected Barua MCP client, follow [browser sign-in and tool access](references/management.md#browser-sign-in-and-tool-access). Check the actual workspace and allowed actions before starting. Use the signed-in Barua page for private steps.
+
 - With `BARUA_MANAGEMENT_KEY`, follow [quickstart](references/quickstart.md) once to verify private access and the exact workspace. Use the actual grant, never an assumed default.
 - With only `BARUA_API_KEY`, verify it is a test key before any other Barua call. Follow [one event](references/events.md#start-with-one-event) or [full event-only setup](references/event-only.md), according to the request.
 - For a missing key, use [key recovery](references/management.md#recover-a-lost-management-key). For signup, a new connection or owner approval, load the relevant [owner procedure](references/owner.md). Terms acceptance remains the owner's decision.
