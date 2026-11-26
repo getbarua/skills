@@ -7,6 +7,10 @@ The [management reference](management.md#http-contract) covers the action
 envelope, idempotency and owner authority. Read `capabilities` for the live
 schema before sending an action.
 
+For a sample from a brief alone, start with the [email design library](email-design.md).
+Use fictional values when you need to show personalization. Reserve merge
+fields for paths declared by the workspace. A sample can be written offline.
+
 With a connected MCP client, use `barua_read` for the reads in this guide.
 Start with `{"command":"authoring-inbox","arguments":{"query":{"area":"plays"}}}`.
 Use `barua_describe_read` for each read's parameters. For
@@ -40,13 +44,28 @@ read the writing task by that job's ID.
 
 ## Write from the saved facts
 
+Before drafting, use the [email design library](email-design.md) to pick a
+pattern for the reader's situation. Compare the closest hosted example with
+the workspace's saved layout. Use the design notes bundled with the skill
+when browsing is unavailable.
+
 Play submission requires confirmed branding and Play review. If the workspace reviews individual emails, use its existing owner review step to enable Plays. An older Play can use one enrollment per matching item. If preflight returns `target_unavailable`, explain the existing audience and ask the owner how it should qualify before changing that rule. A copy edit alone cannot convert that audience.
 
-Use the workspace's brand, voice and approved facts. Start from the reason
-this one reader should open the email. Write one clear message with a
-specific, grounded ask. Keep the phrasing conversational and cut promotional
-filler, manufactured urgency and slogans. Read the result aloud and fix
-phrases that sound like a pitch or obscure the offer.
+For a new Play, name the qualifying event, what the reader can do next and
+which later event should stop the email. Check all three against the saved
+plan and supported rules. If someone who already finished would still
+qualify, fix the audience before proposing the Play. A reminder needs a
+useful reason of its own. Skip a suggestion when the data supports none.
+
+Use the workspace's voice and approved facts. For an action email, put the
+verb and the reader's own item near the start of the subject, where they
+survive a narrow inbox. Give the concrete reason beside the ask. Label
+the button with what opens or happens. For example, if a saved draft can be
+previewed, “Preview your draft” describes the destination. “Publish your
+draft” promises a different action. For a service email, lead with what
+happened and say whether the reader needs to act. Read the result aloud.
+Replace any sentence that could be sent by a competitor with a fact from
+the brief, or cut it.
 
 Write directly in each requested locale. Use its natural grammar, register,
 compounds, punctuation and spelling. Preserve diacritics, proper names and
