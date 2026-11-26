@@ -27,11 +27,9 @@ Use the tools' declared input schemas. Use the same logical request and idempote
 
 `BARUA_MANAGEMENT_KEY` is a workspace-specific `mk_` secret. It authorizes
 `https://barua.ai/api/management/v1`; an `ik_` event key cannot call that API.
-The owner creates the connection through initial browser onboarding, Settings →
-Agents or the owner API below. New browser-onboarding connections start with all
-permissions selected and full delegation; the owner can change either before
-creating access. Settings defaults and saved grants are unchanged. The owner
-selects permissions and review checkpoints. An expiry is optional.
+New agents connect through browser sign-in. Existing scripts can continue using
+their authorized key. The owner API below supports headless integrations.
+The owner selects permissions and review checkpoints. An expiry is optional.
 `review: []` delegates the permitted actions without an extra review. Checkpoints
 can be any of `plan`, `brand`, `play`, `launch`, `campaign`, and apply to later changes too.
 Full delegation does not add permissions. Check the actual grant before saying
@@ -42,9 +40,9 @@ the real workspace, including live intake and sending when launch is granted
 and setup requirements are met. Explain this before asking an owner to save
 the key. Store it as `BARUA_MANAGEMENT_KEY` in the agent's secret store and load
 it into the helper's process environment; `manage.mjs` does not read env files
-automatically. Establish a secure destination and a permitted transfer method
-before creating a connection. If browser transfer is unavailable, arrange
-owner-assisted saving and keep the key panel open until saving is confirmed.
+automatically. For a headless integration, establish a secure destination and a
+permitted transfer method before using the owner API. To recover an existing
+key in Settings → Agents, keep the key panel open until saving is confirmed.
 Ask for only the saved location. Continue independent work until it is
 available, then verify access with `capabilities`. The screen's **Access granted**
 status (formerly **Connected**) confirms permission, not that the agent holds a key.

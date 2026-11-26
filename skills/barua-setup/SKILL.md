@@ -16,11 +16,12 @@ Read this router, then only the linked task sections you need. Read a named sect
 
 For examples alone, go straight to the public [email design library](references/email-design.md). For work in a workspace, choose the matching connection below.
 
+- For a new agent connection, use [Barua’s browser sign-in](https://barua.ai/mcp). If sign-in is unavailable for that workspace, defer work that needs agent access.
 - With a connected Barua MCP client, follow [browser sign-in and tool access](references/management.md#browser-sign-in-and-tool-access). Check the actual workspace and allowed actions before starting. Use the signed-in Barua page for private steps.
 
 - With `BARUA_MANAGEMENT_KEY`, follow [quickstart](references/quickstart.md) once to verify private access and the exact workspace. Use the actual grant, never an assumed default.
 - With only `BARUA_API_KEY`, verify it is a test key before any other Barua call. Follow [one event](references/events.md#start-with-one-event) or [full event-only setup](references/event-only.md), according to the request.
-- For a missing key, use [key recovery](references/management.md#recover-a-lost-management-key). For signup, a new connection or owner approval, load the relevant [owner procedure](references/owner.md). Terms acceptance remains the owner's decision.
+- For an existing script with a missing key, use [key recovery](references/management.md#recover-a-lost-management-key). For signup or owner approval, load the relevant [owner procedure](references/owner.md). Terms acceptance remains the owner's decision.
 - For read-only inspection, use [inspection](references/inspection.md). Do not start setup or collect unrelated diagnostics.
 
 ## Choose the requested task
